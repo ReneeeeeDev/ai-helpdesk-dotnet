@@ -13,6 +13,9 @@ public sealed record ChangePriorityRequest(TicketPriority Priority);
 
 public sealed record AssignTicketRequest(Guid? AssigneeId, Guid? TeamId);
 
+/// <summary>Mensaje SignalR "TicketChanged": el cliente vuelve a pedir el ticket a la API.</summary>
+public sealed record TicketChangedNotification(Guid TicketId, string Kind);
+
 /// <summary>Filtros del inbox. Todos opcionales.</summary>
 public sealed record TicketListQuery
 {

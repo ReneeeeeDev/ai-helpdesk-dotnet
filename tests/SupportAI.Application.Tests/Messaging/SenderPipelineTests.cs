@@ -98,7 +98,7 @@ public class SenderPipelineTests
 
         var ex = await Should.ThrowAsync<RequestValidationException>(() => sp.GetRequiredService<ISender>().Send(new PingQuery("too-long-value")));
 
-        ex.Errors.ShouldContainKey("Value");
+        ex.Errors.ShouldContainKey("value");
     }
 
     [Fact]

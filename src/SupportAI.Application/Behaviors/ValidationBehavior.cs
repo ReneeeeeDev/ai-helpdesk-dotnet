@@ -21,7 +21,7 @@ internal sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValid
         var errors = results
             .SelectMany(r => r.Errors)
             .Where(f => f is not null)
-            .GroupBy(f => string.IsNullOrEmpty(f.PropertyName) ? "request" : f.PropertyName)
+            .GroupBy(f => string.IsNullOrEmpty(f.PropertyName) ? "request" : ToCamelCasePath(f.PropertyName))
             .ToDictionary(g => g.Key, g => g.Select(f => f.ErrorMessage).Distinct().ToArray());
 
         if (errors.Count > 0)
@@ -31,4 +31,8 @@ internal sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValid
 
         return await next();
     }
+
+    /// <summary>"Article.Title" → "article.title": las claves de error coinciden con el JSON que envía el cliente.</summary>
+    private static string ToCamelCasePath(string propertyName) =>
+        string.Join('.', propertyName.Split('.').Select(segment => System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(segment)));
 }

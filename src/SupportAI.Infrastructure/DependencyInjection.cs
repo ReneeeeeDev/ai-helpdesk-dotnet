@@ -3,10 +3,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using SupportAI.Application.Abstractions.Auth;
 using SupportAI.Application.Abstractions.Data;
 using SupportAI.Application.Abstractions.Tenancy;
+using SupportAI.Infrastructure.BackgroundJobs;
 using SupportAI.Infrastructure.Identity;
 using SupportAI.Infrastructure.Persistence;
+using SupportAI.Infrastructure.Persistence.Idempotency;
 using SupportAI.Infrastructure.Persistence.Interceptors;
 using SupportAI.Infrastructure.Persistence.Seed;
 using SupportAI.Infrastructure.Tenancy;
@@ -29,8 +32,32 @@ public static class DependencyInjection
 
         AddPersistence(services, configuration);
         AddIdentityCore(services);
+        AddAuthentication(services, configuration);
+        AddBackgroundJobs(services, configuration);
 
         return services;
+    }
+
+    private static void AddAuthentication(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<JwtOptions>()
+            .Bind(configuration.GetSection(JwtOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        services.AddSingleton<JwtTokenService>();
+        services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IdempotencyStore>();
+    }
+
+    private static void AddBackgroundJobs(IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<WorkerOptions>(configuration.GetSection(WorkerOptions.SectionName));
+
+        // Singletons + hosted: los tests pueden resolverlos e invocar ProcessBatchAsync/CheckAsync de forma determinista.
+        services.AddSingleton<OutboxProcessor>();
+        services.AddHostedService(sp => sp.GetRequiredService<OutboxProcessor>());
+        services.AddSingleton<SlaMonitor>();
+        services.AddHostedService(sp => sp.GetRequiredService<SlaMonitor>());
     }
 
     private static void AddPersistence(IServiceCollection services, IConfiguration configuration)
