@@ -13,6 +13,7 @@ internal sealed class AiTriageResultConfiguration : IEntityTypeConfiguration<AiT
         builder.ConfigureAggregate();
         builder.Property(r => r.PromptKey).HasMaxLength(100).IsRequired();
         builder.Property(r => r.Model).HasMaxLength(100).IsRequired();
+        builder.Property(r => r.Priority).HasConversion<int>();
         builder.Property(r => r.Category).HasMaxLength(60);
         builder.Property(r => r.Language).HasMaxLength(10);
         builder.Property(r => r.Summary).HasMaxLength(1000);

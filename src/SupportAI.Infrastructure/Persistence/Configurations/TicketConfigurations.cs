@@ -18,6 +18,8 @@ internal sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
 
         builder.Property(t => t.Subject).HasMaxLength(Ticket.MaxSubjectLength).IsRequired();
         builder.Property(t => t.Description).IsRequired();
+        // Prioridad como entero (no texto) para que ORDER BY respete la severidad.
+        builder.Property(t => t.Priority).HasConversion<int>();
         builder.Property(t => t.Category).HasMaxLength(60);
         builder.Property(t => t.Language).HasMaxLength(10);
         builder.Property(t => t.AiSummary).HasMaxLength(1000);

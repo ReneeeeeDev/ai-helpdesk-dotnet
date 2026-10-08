@@ -174,10 +174,9 @@ namespace SupportAI.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<string>("Priority")
-                        .IsRequired()
+                    b.Property<int>("Priority")
                         .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)");
+                        .HasColumnType("int");
 
                     b.Property<string>("PromptKey")
                         .IsRequired()
@@ -605,10 +604,9 @@ namespace SupportAI.Infrastructure.Persistence.Migrations
                         .HasColumnType("bigint")
                         .HasDefaultValueSql("NEXT VALUE FOR TicketNumbers");
 
-                    b.Property<string>("Priority")
-                        .IsRequired()
+                    b.Property<int>("Priority")
                         .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)");
+                        .HasColumnType("int");
 
                     b.Property<Guid>("RequesterId")
                         .HasColumnType("uniqueidentifier");
