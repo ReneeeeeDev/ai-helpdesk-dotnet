@@ -1,0 +1,17 @@
+**/bin/
+**/obj/
+**/logs/
+**/*.user
+.git/
+.vs/
+.vscode/
+.idea/
+.husky/_/
+artifacts/
+coverage/
+eval-results/
+tests/
+tools/
+docs/
+*.md
+!src/SupportAI.Infrastructure/Ai/Prompts/**/*.md

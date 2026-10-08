@@ -1,0 +1,24 @@
+# Aprobaciones obligatorias por área (activar "Require approval from code owners" en la rama protegida main).
+# Los grupos son de ejemplo: ajústalos a tu instancia de GitLab.
+
+[Plataforma]
+* @supportai/maintainers
+
+[IA] @supportai/ai-team
+/src/SupportAI.Infrastructure/Ai/
+/src/SupportAI.Application/Features/Ai/
+/evals/
+/tests/SupportAI.PromptEvals/
+
+[Base de datos] @supportai/db-owners
+/src/SupportAI.Infrastructure/Persistence/Migrations/
+/src/SupportAI.Infrastructure/Persistence/Configurations/
+
+[Seguridad] @supportai/security
+/src/SupportAI.Infrastructure/Identity/
+/src/SupportAI.Api/Extensions/ApiServiceCollectionExtensions.cs
+
+[CI/CD] @supportai/maintainers
+/.gitlab-ci.yml
+/.gitlab/
+**/Dockerfile

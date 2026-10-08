@@ -1,0 +1,325 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# SupportAI · GitLab CI/CD
+#
+# MR / main / tags:  lint → build → test (unit, integración con SQL Server, migraciones, eval smoke)
+#                    → security (SAST, secretos, paquetes vulnerables)
+#                    → evaluate (prompt-eval con Claude real: manual y BLOQUEANTE si cambian prompts; ai-review opcional)
+# main / tags:       → package (imágenes Docker + script SQL idempotente) → deploy (staging auto, production manual)
+#
+# Variables de CI/CD necesarias (Settings → CI/CD → Variables, masked + protected):
+#   ANTHROPIC_API_KEY     jobs prompt-eval y ai-review
+#   GITLAB_REVIEW_TOKEN   job ai-review (project access token con scope "api", rol Reporter)
+#   DEPLOY_WEBHOOK_URL    jobs de deploy (opcional; sin ella el deploy es un dry-run)
+# ──────────────────────────────────────────────────────────────────────────────
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # Evita pipelines duplicados (branch + MR) cuando la rama tiene un MR abierto.
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+
+stages:
+  - lint
+  - build
+  - test
+  - security
+  - evaluate
+  - package
+  - deploy
+
+variables:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+  NUGET_PACKAGES: "$CI_PROJECT_DIR/.nuget/packages"
+  HUSKY: "0"
+  CONFIGURATION: "Release"
+  SOLUTION: "SupportAI.sln"
+
+default:
+  image: mcr.microsoft.com/dotnet/sdk:9.0
+  interruptible: true
+  cache:
+    key:
+      files:
+        - Directory.Packages.props
+        - .config/dotnet-tools.json
+    paths:
+      - .nuget/packages
+    policy: pull
+
+include:
+  - template: Jobs/SAST.gitlab-ci.yml
+  - template: Jobs/Secret-Detection.gitlab-ci.yml
+
+# ───────────────────────────── lint ─────────────────────────────
+
+format:
+  stage: lint
+  cache:
+    key:
+      files: [Directory.Packages.props, .config/dotnet-tools.json]
+    paths: [.nuget/packages]
+    policy: pull-push
+  script:
+    - dotnet restore $SOLUTION
+    - dotnet format $SOLUTION --verify-no-changes --no-restore --exclude src/SupportAI.Infrastructure/Persistence/Migrations
+
+commit-messages:
+  stage: lint
+  image: alpine/git:2.47.2
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    # Mismo patrón que el hook local commit-msg (Conventional Commits).
+    - git fetch --depth=200 origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - |
+      pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .{3,100}$'
+      bad=0
+      for sha in $(git rev-list "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME..HEAD"); do
+        subject=$(git log -1 --format=%s "$sha")
+        case "$subject" in Merge*|Revert*|fixup!*|squash!*) continue ;; esac
+        if ! printf '%s' "$subject" | grep -Eq "$pattern"; then echo "✖ $sha: $subject"; bad=1; fi
+      done
+      exit $bad
+
+# ───────────────────────────── build ─────────────────────────────
+
+build:
+  stage: build
+  script:
+    - dotnet restore $SOLUTION
+    - dotnet build $SOLUTION -c $CONFIGURATION --no-restore -warnaserror
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - "src/*/bin/"
+      - "src/*/obj/"
+      - "tests/*/bin/"
+      - "tests/*/obj/"
+      - "tools/*/bin/"
+      - "tools/*/obj/"
+
+# ───────────────────────────── test ─────────────────────────────
+
+.dotnet-test:
+  stage: test
+  needs: [build]
+  before_script:
+    - dotnet tool install --tool-path /tmp/tools dotnet-reportgenerator-globaltool --version 5.4.4 >/dev/null
+  after_script:
+    # Resumen de cobertura en el log (GitLab extrae el % con la regex de "coverage").
+    - /tmp/tools/reportgenerator -reports:"artifacts/coverage/**/coverage.cobertura.xml" -targetdir:artifacts/coverage-report -reporttypes:"TextSummary;Cobertura" || true
+    - cat artifacts/coverage-report/Summary.txt 2>/dev/null | head -20 || true
+  coverage: '/Line coverage: (\d+(?:\.\d+)?)%/'
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - artifacts/
+    reports:
+      junit: artifacts/junit/*.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: artifacts/coverage-report/Cobertura.xml
+
+unit-tests:
+  extends: .dotnet-test
+  script:
+    - >
+      dotnet test $SOLUTION -c $CONFIGURATION --no-build
+      --filter "Category!=Integration"
+      --logger "junit;LogFilePath=$CI_PROJECT_DIR/artifacts/junit/{assembly}.xml"
+      --collect:"XPlat Code Coverage" --results-directory artifacts/coverage
+
+integration-tests:
+  extends: .dotnet-test
+  services:
+    - name: mcr.microsoft.com/mssql/server:2022-latest
+      alias: mssql
+  variables:
+    ACCEPT_EULA: "Y"
+    # Contraseña de un contenedor efímero de CI (no es un secreto real).
+    MSSQL_SA_PASSWORD: "Ci_Ephemeral_Passw0rd!"
+    SUPPORTAI_TEST_CONNECTION: "Server=mssql,1433;Database=SupportAI_IntegrationTests;User Id=sa;Password=Ci_Ephemeral_Passw0rd!;TrustServerCertificate=True"
+  script:
+    - |
+      echo "Esperando a SQL Server..."
+      for i in $(seq 1 60); do (echo > /dev/tcp/mssql/1433) >/dev/null 2>&1 && break; sleep 2; done
+      sleep 10
+    - >
+      dotnet test tests/SupportAI.Api.IntegrationTests -c $CONFIGURATION --no-build
+      --logger "junit;LogFilePath=$CI_PROJECT_DIR/artifacts/junit/{assembly}.xml"
+      --collect:"XPlat Code Coverage" --results-directory artifacts/coverage
+
+migrations-check:
+  stage: test
+  needs: [build]
+  script:
+    - dotnet tool restore
+    # Falla si alguien cambió el modelo de EF Core sin generar la migración correspondiente.
+    - dotnet ef migrations has-pending-model-changes -p src/SupportAI.Infrastructure -s src/SupportAI.Infrastructure -c $CONFIGURATION --no-build
+
+eval-smoke:
+  stage: test
+  needs: [build]
+  script:
+    # Verifica que el harness de evaluación funciona (proveedor Fake, sin costo). La heurística del Fake es la línea base.
+    - dotnet run --project tests/SupportAI.PromptEvals -c $CONFIGURATION --no-build -- --provider fake --out eval-results --min-category-accuracy 0.6
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths: [eval-results/]
+
+# ───────────────────────────── security ─────────────────────────────
+
+sast:
+  stage: security
+
+secret_detection:
+  stage: security
+
+vulnerable-packages:
+  stage: security
+  needs: []
+  script:
+    - dotnet restore $SOLUTION
+    - dotnet list $SOLUTION package --vulnerable --include-transitive 2>&1 | tee vulnerable-packages.txt
+    - |
+      if grep -Eq "(High|Critical)" vulnerable-packages.txt; then
+        echo "✖ Hay dependencias con vulnerabilidades High/Critical."; exit 1
+      fi
+  artifacts:
+    when: always
+    paths: [vulnerable-packages.txt]
+
+# ───────────────────────────── evaluate (IA) ─────────────────────────────
+
+prompt-eval:
+  stage: evaluate
+  needs: [build]
+  rules:
+    # Si un MR cambia prompts o el dataset, el pipeline queda BLOQUEADO hasta que alguien ejecute la evaluación real.
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - src/SupportAI.Infrastructure/Ai/Prompts/**/*
+        - evals/**/*
+      when: manual
+      allow_failure: false
+  script:
+    - test -n "$ANTHROPIC_API_KEY" || { echo "✖ Define ANTHROPIC_API_KEY como variable masked/protected."; exit 1; }
+    - dotnet run --project tests/SupportAI.PromptEvals -c $CONFIGURATION --no-build -- --provider claude --out eval-results --min-category-accuracy 0.85
+  artifacts:
+    when: always
+    expire_in: 30 days
+    expose_as: "Prompt eval"
+    paths: [eval-results/]
+
+ai-review:
+  stage: evaluate
+  needs: [build]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $ANTHROPIC_API_KEY && $GITLAB_REVIEW_TOKEN
+      when: manual
+      allow_failure: true
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - git diff --unified=3 "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME...HEAD" -- . ':(exclude)**/Migrations/*.Designer.cs' ':(exclude)**/*ModelSnapshot.cs' > mr.diff
+    - dotnet run --project tools/SupportAI.MrReviewer -c $CONFIGURATION --no-build -- --diff mr.diff --post
+  artifacts:
+    when: always
+    paths: [ai-review.md]
+
+# ───────────────────────────── package ─────────────────────────────
+
+.docker-build:
+  stage: package
+  image: docker:27
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  needs: [unit-tests, integration-tests]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - IMAGE="$CI_REGISTRY_IMAGE/$IMAGE_NAME"
+    - TAG="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
+    - docker build --pull -f "$DOCKERFILE" --label "org.opencontainers.image.revision=$CI_COMMIT_SHA" -t "$IMAGE:$TAG" .
+    - docker push "$IMAGE:$TAG"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        docker tag "$IMAGE:$TAG" "$IMAGE:main" && docker push "$IMAGE:main"
+      fi
+
+package-api:
+  extends: .docker-build
+  variables:
+    IMAGE_NAME: api
+    DOCKERFILE: src/SupportAI.Api/Dockerfile
+
+package-web:
+  extends: .docker-build
+  variables:
+    IMAGE_NAME: web
+    DOCKERFILE: src/SupportAI.Web/Dockerfile
+
+migration-script:
+  stage: package
+  needs: [build]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+  script:
+    - dotnet tool restore
+    # Script idempotente: se puede aplicar en cualquier entorno, sin importar en qué migración esté.
+    - dotnet ef migrations script --idempotent -p src/SupportAI.Infrastructure -s src/SupportAI.Infrastructure -c $CONFIGURATION --no-build -o artifacts/migrations.sql
+  artifacts:
+    expire_in: 90 days
+    paths: [artifacts/migrations.sql]
+
+# ───────────────────────────── deploy ─────────────────────────────
+
+.deploy:
+  stage: deploy
+  image: curlimages/curl:8.11.1
+  script:
+    - TAG="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
+    - echo "Desplegando api:$TAG y web:$TAG en $CI_ENVIRONMENT_NAME"
+    - |
+      if [ -z "$DEPLOY_WEBHOOK_URL" ]; then
+        echo "DEPLOY_WEBHOOK_URL no definida: dry-run (configúrala para tu plataforma: Kubernetes, App Service, etc.)."
+        exit 0
+      fi
+      curl --fail -X POST "$DEPLOY_WEBHOOK_URL" \
+        -H "Content-Type: application/json" \
+        -d "{\"environment\":\"$CI_ENVIRONMENT_NAME\",\"tag\":\"$TAG\",\"migrations\":\"$CI_JOB_URL\"}"
+
+deploy-staging:
+  extends: .deploy
+  needs: [package-api, package-web, migration-script]
+  environment:
+    name: staging
+    url: https://staging.supportai.example.com
+  resource_group: staging
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+deploy-production:
+  extends: .deploy
+  needs: [package-api, package-web, migration-script]
+  environment:
+    name: production
+    url: https://supportai.example.com
+  resource_group: production
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: manual

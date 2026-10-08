@@ -14,5 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="SupportAI.Application.Tests" />
+    <InternalsVisibleTo Include="SupportAI.PromptEvals" />
   </ItemGroup>
 </Project>

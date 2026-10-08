@@ -68,15 +68,8 @@ public sealed partial class TicketTriageService(
 
         var subject = redactor.Redact(ticket.Subject);
         var description = redactor.Redact(ticket.Description);
-        var userMessage = PromptRenderer.Render(prompt.UserTemplate, new Dictionary<string, string>
-        {
-            ["categories"] = string.Join('\n', categories.Select(c => $"- {c}")),
-            ["teams"] = string.Join('\n', teams.Select(t => $"- {t.Name}: {string.Join(", ", t.Categories)}")),
-            ["channel"] = ticket.Channel.ToString(),
-            ["created_at"] = ticket.CreatedAt.ToString("u", CultureInfo.InvariantCulture),
-            ["subject"] = PromptRenderer.Untrusted(subject.Text),
-            ["description"] = PromptRenderer.Untrusted(PromptRenderer.Truncate(description.Text, 8_000)),
-        });
+        var userMessage = BuildUserMessage(prompt, categories, teams.Select(t => (t.Name, t.Categories)).ToList(),
+            ticket.Channel.ToString(), ticket.CreatedAt, subject.Text, description.Text);
 
         var teamNames = teams.Select(t => t.Name).ToList();
         var result = await structured.CompleteAsync<TriageOutput>(
@@ -127,6 +120,25 @@ public sealed partial class TicketTriageService(
         LogTriaged(logger, ticket.Id, triage.Status, triage.Confidence, prompt.Version);
         return triage;
     }
+
+    /// <summary>Renderiza el mensaje de usuario del triage. Lo comparten el servicio y el harness de evaluación.</summary>
+    internal static string BuildUserMessage(
+        PromptDefinition prompt,
+        IReadOnlyList<string> categories,
+        IReadOnlyList<(string Name, IReadOnlyList<string> Categories)> teams,
+        string channel,
+        DateTimeOffset createdAt,
+        string redactedSubject,
+        string redactedDescription) =>
+        PromptRenderer.Render(prompt.UserTemplate, new Dictionary<string, string>
+        {
+            ["categories"] = string.Join('\n', categories.Select(c => $"- {c}")),
+            ["teams"] = string.Join('\n', teams.Select(t => $"- {t.Name}: {string.Join(", ", t.Categories)}")),
+            ["channel"] = channel,
+            ["created_at"] = createdAt.ToString("u", CultureInfo.InvariantCulture),
+            ["subject"] = PromptRenderer.Untrusted(redactedSubject),
+            ["description"] = PromptRenderer.Untrusted(PromptRenderer.Truncate(redactedDescription, 8_000)),
+        });
 
     internal static JsonObject ConstrainSchema(JsonObject schema, IReadOnlyList<string> categories, IReadOnlyList<string> teams)
     {

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Evaluación offline de prompts contra un dataset dorado. Con proveedor "claude" hace llamadas REALES y facturables:
+    solo se ejecuta a mano (job manual prompt-eval en GitLab) o con autorización explícita.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UserSecretsId>supportai-api-7f1c2d3e</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SupportAI.Infrastructure\SupportAI.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
+  </ItemGroup>
+</Project>
