@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Revisor automático de Merge Requests con Claude (job manual `ai-review` en GitLab CI). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SupportAI.Infrastructure\SupportAI.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

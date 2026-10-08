@@ -20,7 +20,7 @@ Los agentes además tienen **respuestas sugeridas con citas** a la base de conoc
 | **Integración de LLMs** | `Infrastructure/Ai`: `ClaudeLlmClient` (structured outputs, streaming, tool use, prompt caching, fallback del servidor), circuit breaker, presupuesto de tokens, costos en `LlmCallLog` |
 | **Prompt engineering y JSON** | Prompts versionados e inmutables en `Ai/Prompts/{key}/v{n}`, JSON Schema con enums dinámicos por tenant, validación en capas + reparación, defensa contra prompt injection, redacción de PII, evaluación con dataset dorado |
 | **Git** | Historia lineal por fases (ramas `feat/*` + rebase + fast-forward), Conventional Commits con hook, `rerere`, guía de conflictos (incluido el de `ModelSnapshot` de EF): [docs/git-workflow.md](docs/git-workflow.md) |
-| **GitLab** | [.gitlab-ci.yml](.gitlab-ci.yml) (lint, build, tests con JUnit/cobertura, SQL Server como servicio, SAST, evaluación de prompts bloqueante, Docker, environments), plantillas de MR e issues, CODEOWNERS |
+| **GitLab** | [.gitlab-ci.yml](.gitlab-ci.yml) (lint, build, tests con JUnit/cobertura, SQL Server como servicio, SAST, evaluación de prompts bloqueante, Docker, environments), plantillas de MR e issues, CODEOWNERS, revisor de MR con IA |
 | **Asistentes de IA** | [AGENTS.md](AGENTS.md) como fuente única; [CLAUDE.md](CLAUDE.md), `.cursor/rules/`, `.github/copilot-instructions.md`, comandos de Claude Code en `.claude/commands/` |
 
 ## Arquitectura
@@ -109,6 +109,19 @@ dotnet run --project tests/SupportAI.PromptEvals -- --provider claude    # evalu
   (emails, teléfonos, tarjetas con Luhn, IBAN) se redacta antes de enviarse.
 - **Medición**: tasa de aceptación por versión de prompt (correcciones de agentes) y evaluación offline con 30 casos dorados.
   Como referencia, la heurística del proveedor Fake obtiene ~73 % en categoría; el job `prompt-eval` exige 85 % con Claude.
+
+## Revisor de MR con IA
+
+`tools/SupportAI.MrReviewer` revisa el diff de un Merge Request con Claude (salida estructurada: riesgo, hallazgos por
+severidad y categoría, tests recomendados) y publica **un único comentario** en el MR, que se actualiza en cada ejecución.
+
+```bash
+git diff origin/main...HEAD > mr.diff
+dotnet run --project tools/SupportAI.MrReviewer -- --diff mr.diff --provider fake   # sin costo
+dotnet run --project tools/SupportAI.MrReviewer -- --diff mr.diff --provider claude # requiere ANTHROPIC_API_KEY
+```
+
+En GitLab CI lo ejecuta el job manual `ai-review` (requiere `ANTHROPIC_API_KEY` y `GITLAB_REVIEW_TOKEN`).
 
 ## Limitaciones conocidas
 

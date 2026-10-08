@@ -42,6 +42,7 @@ internal sealed partial class FakeLlmClient(IOptions<LlmOptions> options) : ILlm
         {
             "triage" => Triage(original),
             "reply" => Reply(original),
+            "review" => Review(original),
             _ when request.JsonSchema is not null => "{}",
             _ => Summarize(user),
         };
@@ -182,6 +183,35 @@ internal sealed partial class FakeLlmClient(IOptions<LlmOptions> options) : ILlm
             confidence = articles.Count > 0 ? 0.8m : 0.4m,
             should_escalate = articles.Count == 0,
             follow_up_questions = articles.Count > 0 ? Array.Empty<string>() : ["¿Desde cuándo ocurre el problema?"],
+        });
+    }
+
+    // ───────────────────────────── Revisión de MR ─────────────────────────────
+
+    private static string Review(string prompt)
+    {
+        var files = Regex.Matches(prompt, @"^\+\+\+ b/(.+)$", RegexOptions.Multiline).Select(m => m.Groups[1].Value.Trim()).Distinct().ToList();
+        var findings = files
+            .Where(f => f.EndsWith(".cs", StringComparison.Ordinal) && !f.Contains("Tests", StringComparison.Ordinal))
+            .Take(1)
+            .Select(f => new
+            {
+                file = f,
+                line = 1,
+                severity = "nit",
+                category = "test",
+                title = "Verificar cobertura de tests",
+                explanation = "Revisión simulada: confirma que el cambio en este archivo tiene tests que lo ejercitan.",
+                suggestion = "Agrega o actualiza un test unitario o de integración para este comportamiento.",
+            })
+            .ToArray();
+
+        return JsonSerializer.Serialize(new
+        {
+            summary = $"(Revisión simulada) El diff modifica {files.Count} archivo(s). Configura Claude para una revisión real.",
+            risk = "low",
+            findings,
+            tests_recommended = Array.Empty<string>(),
         });
     }
 
