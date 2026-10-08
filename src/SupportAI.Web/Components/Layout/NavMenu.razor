@@ -1,0 +1,26 @@
+@inject SessionStore Session
+
+<MudNavMenu Class="pt-2">
+    @if (Session.IsStaff)
+    {
+        <MudText Typo="Typo.overline" Class="px-4">Soporte</MudText>
+        <MudNavLink Href="inbox" Icon="@Icons.Material.Filled.Inbox">Bandeja de tickets</MudNavLink>
+        <MudNavLink Href="copilot" Icon="@Icons.Material.Filled.AutoAwesome">Copiloto IA</MudNavLink>
+        <MudNavLink Href="knowledge" Icon="@Icons.Material.Filled.MenuBook">Base de conocimiento</MudNavLink>
+    }
+    else
+    {
+        <MudNavLink Href="my-tickets" Icon="@Icons.Material.Filled.ConfirmationNumber">Mis tickets</MudNavLink>
+        <MudNavLink Href="tickets/new" Icon="@Icons.Material.Filled.AddCircle">Nuevo ticket</MudNavLink>
+        <MudNavLink Href="knowledge" Icon="@Icons.Material.Filled.HelpCenter">Centro de ayuda</MudNavLink>
+    }
+
+    @if (Session.IsAdmin)
+    {
+        <MudDivider Class="my-2" />
+        <MudText Typo="Typo.overline" Class="px-4">Administración</MudText>
+        <MudNavLink Href="admin/ai" Icon="@Icons.Material.Filled.Insights">Uso y costos de IA</MudNavLink>
+        <MudNavLink Href="admin/prompts" Icon="@Icons.Material.Filled.History">Versiones de prompts</MudNavLink>
+        <MudNavLink Href="admin/settings" Icon="@Icons.Material.Filled.Settings">Configuración</MudNavLink>
+    }
+</MudNavMenu>

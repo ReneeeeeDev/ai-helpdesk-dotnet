@@ -1,0 +1,256 @@
+@page "/admin/ai"
+@inject SupportAIApiClient Api
+@inject SessionStore Session
+@inject ISnackbar Snackbar
+
+<PageTitle>Uso y costos de IA · SupportAI</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1"><b>Uso y costos de IA</b></MudText>
+<MudText Typo="Typo.body2" Class="mb-4">Tokens, caché, costo estimado y precisión del triage por versión de prompt. Fuente: <code>LlmCallLogs</code> y <code>AiTriageResults</code>.</MudText>
+
+@if (!Session.IsAdmin)
+{
+    <MudAlert Severity="Severity.Info">Solo administradores.</MudAlert>
+    return;
+}
+
+@* Filtros: una sola fila, encima de los gráficos. *@
+<MudStack Row="true" Spacing="1" Class="mb-4">
+    @foreach (var days in RangePresets)
+    {
+        <MudButton Size="Size.Small" Variant="@(_rangeDays == days ? Variant.Filled : Variant.Outlined)" Color="Color.Primary" OnClick="() => SetRangeAsync(days)">
+            Últimos @days días
+        </MudButton>
+    }
+</MudStack>
+
+@if (_report is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+    return;
+}
+
+@* KPI row: stat tiles (no son gráficos: son números de cabecera). *@
+<MudGrid Spacing="3" Class="mb-2">
+    <MudItem xs="12" sm="6" lg="3">
+        <MudPaper Class="pa-4" Elevation="0" Outlined="true" Style="height: 100%;">
+            <MudText Typo="Typo.caption">Tokens este mes</MudText>
+            <div class="sai-kpi-value">@Ui.Number(_report.TokensThisMonth)</div>
+            @if (_report.MonthlyTokenBudget > 0)
+            {
+                var ratio = Math.Min(1d, (double)_report.TokensThisMonth / _report.MonthlyTokenBudget);
+                <MudProgressLinear Value="@(ratio * 100)" Color="Color.Primary" Rounded="true" Class="my-2" aria-label="Uso del presupuesto mensual" />
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                    @if (ratio >= 0.9)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Small" />
+                        <MudText Typo="Typo.caption">Cerca del límite</MudText>
+                    }
+                    <MudText Typo="Typo.caption">@Ui.Percent(ratio) de @Ui.Number(_report.MonthlyTokenBudget)</MudText>
+                </MudStack>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption">Sin límite mensual</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" lg="3">
+        <MudPaper Class="pa-4" Elevation="0" Outlined="true" Style="height: 100%;">
+            <MudText Typo="Typo.caption">Costo estimado este mes</MudText>
+            <div class="sai-kpi-value">@Ui.Money(_report.CostThisMonthUsd)</div>
+            <MudText Typo="Typo.caption">Según precios por MTok configurados</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" lg="3">
+        <MudPaper Class="pa-4" Elevation="0" Outlined="true" Style="height: 100%;">
+            <MudText Typo="Typo.caption">Lecturas desde caché de prompt</MudText>
+            <div class="sai-kpi-value">@Ui.Percent(_report.CacheHitRatio)</div>
+            <MudText Typo="Typo.caption">Tokens de entrada servidos desde caché</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6" lg="3">
+        <MudPaper Class="pa-4" Elevation="0" Outlined="true" Style="height: 100%;">
+            <MudText Typo="Typo.caption">Llamadas en el rango</MudText>
+            <div class="sai-kpi-value">@Ui.Number(_totalCalls)</div>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                @if (_totalFailures > 0)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Error" Size="Size.Small" />
+                }
+                <MudText Typo="Typo.caption">@Ui.Number(_totalFailures) con error (@Ui.Percent(_totalCalls == 0 ? 0 : (double)_totalFailures / _totalCalls))</MudText>
+            </MudStack>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" lg="8">
+        <MudPaper Class="pa-4" Elevation="0" Outlined="true">
+            <MudText Typo="Typo.subtitle1"><b>Tokens por día y operación</b></MudText>
+            <MudText Typo="Typo.caption">Entrada + salida + caché. Pasa el cursor por una barra para ver el detalle.</MudText>
+            <MudChart T="double" ChartType="ChartType.StackedBar" ChartSeries="_tokenSeries" ChartLabels="_labels" ChartOptions="TokenOptions"
+                      Width="100%" Height="320px" LegendPosition="Position.Top" />
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" lg="4">
+        <MudPaper Class="pa-4" Elevation="0" Outlined="true">
+            <MudText Typo="Typo.subtitle1"><b>Costo diario (USD)</b></MudText>
+            <MudText Typo="Typo.caption">Todas las operaciones.</MudText>
+            @if (_totalCost == 0)
+            {
+                <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height: 320px;">
+                    <MudIcon Icon="@Icons.Material.Filled.MoneyOff" Color="Color.Default" />
+                    <MudText Typo="Typo.body2" Align="Align.Center">Sin costo en el rango.<br />El proveedor simulado (<code>Llm:Provider=Fake</code>) no tiene precio por token.</MudText>
+                </MudStack>
+            }
+            else
+            {
+                @* Una sola serie: el título la nombra, sin caja de leyenda. *@
+                <MudChart T="double" ChartType="ChartType.Bar" ChartSeries="_costSeries" ChartLabels="_labels" ChartOptions="CostOptions"
+                          Width="100%" Height="320px" />
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudExpansionPanels Elevation="0" Outlined="true" Class="mt-3">
+    <MudExpansionPanel Text="Ver datos en tabla">
+        <MudSimpleTable Dense="true" Elevation="0" Hover="true">
+            <thead>
+                <tr><th>Día</th><th>Operación</th><th class="text-right">Llamadas</th><th class="text-right">Errores</th><th class="text-right">Entrada</th><th class="text-right">Salida</th><th class="text-right">Caché</th><th class="text-right">Costo</th><th class="text-right">Latencia media</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var d in _report.Days.OrderByDescending(d => d.Day).ThenBy(d => OperationOrder(d.Operation)))
+                {
+                    <tr class="sai-num">
+                        <td>@d.Day.ToString("dd/MM/yyyy")</td>
+                        <td>@OperationLabel(d.Operation)</td>
+                        <td class="text-right">@d.Calls</td>
+                        <td class="text-right">@d.Failures</td>
+                        <td class="text-right">@Ui.Number(d.InputTokens)</td>
+                        <td class="text-right">@Ui.Number(d.OutputTokens)</td>
+                        <td class="text-right">@Ui.Number(d.CacheReadTokens)</td>
+                        <td class="text-right">@Ui.Money(d.CostUsd)</td>
+                        <td class="text-right">@d.AvgLatencyMs.ToString("N0") ms</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudExpansionPanel>
+</MudExpansionPanels>
+
+<MudPaper Class="pa-4 mt-3" Elevation="0" Outlined="true">
+    <MudText Typo="Typo.subtitle1"><b>Precisión del triage por versión de prompt</b></MudText>
+    <MudText Typo="Typo.caption">Aceptación = (aceptados + auto-aplicados sin corrección) / (revisados + auto-aplicados). Las correcciones de agentes son la señal para la siguiente versión.</MudText>
+    <MudSimpleTable Dense="true" Elevation="0" Class="mt-2">
+        <thead>
+            <tr><th>Prompt</th><th class="text-right">Total</th><th class="text-right">Auto-aplicados</th><th class="text-right">Aceptados</th><th class="text-right">Corregidos</th><th class="text-right">Inválidos</th><th style="min-width: 180px;">Aceptación</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var a in _report.PromptAccuracy)
+            {
+                <tr class="sai-num">
+                    <td><code>@a.PromptKey</code> v@(a.PromptVersion)</td>
+                    <td class="text-right">@a.Total</td>
+                    <td class="text-right">@a.AutoApplied</td>
+                    <td class="text-right">@a.Accepted</td>
+                    <td class="text-right">@a.Overridden</td>
+                    <td class="text-right">@a.Invalid</td>
+                    <td>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudProgressLinear Value="@(a.AcceptanceRate * 100)" Color="Color.Primary" Rounded="true" Style="width: 110px;" aria-label="Tasa de aceptación" />
+                            <span>@Ui.Percent(a.AcceptanceRate)</span>
+                        </MudStack>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudPaper>
+
+@code {
+    [CascadingParameter(Name = "IsDarkMode")] public bool IsDarkMode { get; set; }
+
+    private static readonly int[] RangePresets = [7, 30, 90];
+
+    // Orden fijo de operaciones → slot de color fijo (el color sigue a la entidad, nunca al rango).
+    private static readonly string[] Operations = ["triage", "reply", "summary", "copilot"];
+
+    // Paleta categórica validada (scripts/validate_palette.js): slots 1-4 + 5 para "otros"; pasos propios para modo oscuro.
+    private static readonly string[] LightPalette = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"];
+    private static readonly string[] DarkPalette = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"];
+
+    private AiUsageReportDto? _report;
+    private int _rangeDays = 30;
+    private string[] _labels = [];
+    private List<ChartSeries<double>> _tokenSeries = [];
+    private List<ChartSeries<double>> _costSeries = [];
+    private long _totalCalls;
+    private long _totalFailures;
+    private decimal _totalCost;
+
+    private ChartOptions TokenOptions => new() { ChartPalette = IsDarkMode ? DarkPalette : LightPalette };
+
+    private ChartOptions CostOptions => new() { ChartPalette = [IsDarkMode ? DarkPalette[0] : LightPalette[0]], ShowLegend = false };
+
+    protected override Task OnInitializedAsync() => Session.IsAdmin ? LoadAsync() : Task.CompletedTask;
+
+    private async Task SetRangeAsync(int days)
+    {
+        _rangeDays = days;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var report = await Api.GetAiUsageAsync(DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-(_rangeDays - 1)), DateOnly.FromDateTime(DateTime.UtcNow));
+            BuildCharts(report);
+            _report = report;
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private void BuildCharts(AiUsageReportDto report)
+    {
+        // Eje X continuo: los días sin llamadas aparecen con 0 (no se omiten).
+        var days = Enumerable.Range(0, report.To.DayNumber - report.From.DayNumber + 1).Select(i => report.From.AddDays(i)).ToList();
+        _labels = days.Select((d, i) => days.Count <= 14 || i % 5 == 0 || i == days.Count - 1 ? d.ToString("dd/MM") : string.Empty).ToArray();
+
+        var byKey = report.Days.GroupBy(d => (d.Day, Op: Operations.Contains(d.Operation) ? d.Operation : "other"))
+            .ToDictionary(g => g.Key, g => g.Sum(x => (double)(x.InputTokens + x.OutputTokens + x.CacheReadTokens)));
+
+        var ops = Operations.Concat(report.Days.Any(d => !Operations.Contains(d.Operation)) ? ["other"] : Array.Empty<string>());
+        _tokenSeries = ops.Select(op => new ChartSeries<double>
+        {
+            Name = OperationLabel(op),
+            Data = new ChartData<double>(days.Select(d => byKey.GetValueOrDefault((d, op))).ToArray()),
+        }).ToList();
+
+        var costByDay = report.Days.GroupBy(d => d.Day).ToDictionary(g => g.Key, g => (double)g.Sum(x => x.CostUsd));
+        _costSeries =
+        [
+            new ChartSeries<double> { Name = "Costo (USD)", Data = new ChartData<double>(days.Select(d => Math.Round(costByDay.GetValueOrDefault(d), 4)).ToArray()) },
+        ];
+
+        _totalCalls = report.Days.Sum(d => d.Calls);
+        _totalFailures = report.Days.Sum(d => d.Failures);
+        _totalCost = report.Days.Sum(d => d.CostUsd);
+    }
+
+    private static int OperationOrder(string op) => Array.IndexOf(Operations, op) is var i and >= 0 ? i : Operations.Length;
+
+    private static string OperationLabel(string op) => op switch
+    {
+        "triage" => "Triage",
+        "reply" => "Respuestas sugeridas",
+        "summary" => "Resúmenes",
+        "copilot" => "Copiloto",
+        _ => "Otros",
+    };
+}

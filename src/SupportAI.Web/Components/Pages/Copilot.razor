@@ -1,0 +1,24 @@
+@page "/copilot"
+@inject SessionStore Session
+
+<PageTitle>Copiloto IA · SupportAI</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+    <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" />
+    <MudText Typo="Typo.h5"><b>Copiloto IA</b></MudText>
+</MudStack>
+<MudText Typo="Typo.body2" Class="mb-4">
+    El copiloto consulta tickets, SLA y la base de conocimiento de tu organización mediante herramientas (tool use).
+    Cada respuesta se basa en los datos que obtiene, y verás qué herramientas usó.
+</MudText>
+
+@if (!Session.IsStaff)
+{
+    <MudAlert Severity="Severity.Info">El copiloto está disponible para el equipo de soporte.</MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4" Elevation="0" Outlined="true" Style="max-width: 980px;">
+        <CopilotChat />
+    </MudPaper>
+}

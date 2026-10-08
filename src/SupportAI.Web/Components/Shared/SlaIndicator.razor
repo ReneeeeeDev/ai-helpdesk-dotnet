@@ -1,0 +1,37 @@
+@if (Breached)
+{
+    <MudTooltip Text="SLA incumplido">
+        <MudChip T="string" Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Filled.Alarm">Incumplido</MudChip>
+    </MudTooltip>
+}
+else if (Status is TicketStatus.Resolved or TicketStatus.Closed)
+{
+    <MudText Typo="Typo.caption" Color="Color.Success">Cumplido</MudText>
+}
+else if (Status == TicketStatus.Pending)
+{
+    <MudTooltip Text="El reloj de SLA está pausado mientras se espera al cliente">
+        <MudText Typo="Typo.caption" Color="Color.Default"><MudIcon Icon="@Icons.Material.Filled.PauseCircle" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />Pausado</MudText>
+    </MudTooltip>
+}
+else if (DueAt is { } due)
+{
+    var remaining = due - DateTimeOffset.UtcNow;
+    <MudTooltip Text="@($"Vence: {Ui.Date(due)}")">
+        <MudText Typo="Typo.caption" Color="@(remaining < TimeSpan.FromHours(1) ? Color.Warning : Color.Default)" Class="sai-num">
+            <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />@Ui.Relative(due)
+        </MudText>
+    </MudTooltip>
+}
+else
+{
+    <MudText Typo="Typo.caption">—</MudText>
+}
+
+@code {
+    [Parameter] public DateTimeOffset? DueAt { get; set; }
+
+    [Parameter] public bool Breached { get; set; }
+
+    [Parameter] public TicketStatus Status { get; set; }
+}

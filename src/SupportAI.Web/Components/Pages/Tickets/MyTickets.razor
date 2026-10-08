@@ -1,0 +1,85 @@
+@page "/my-tickets"
+@implements IAsyncDisposable
+@inject SupportAIApiClient Api
+@inject TicketHubClient Hub
+@inject ISnackbar Snackbar
+
+<PageTitle>Mis tickets · SupportAI</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h5"><b>Mis tickets</b></MudText>
+    <MudSpacer />
+    <MudButton Href="tickets/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">Nuevo ticket</MudButton>
+</MudStack>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_items.Count == 0)
+{
+    <MudPaper Class="pa-8 text-center" Elevation="0" Outlined="true">
+        <MudIcon Icon="@Icons.Material.Filled.Inbox" Size="Size.Large" Color="Color.Default" />
+        <MudText Typo="Typo.h6" Class="mt-2">Aún no tienes tickets</MudText>
+        <MudText Typo="Typo.body2" Class="mb-4">Si algo no funciona, cuéntanoslo y te ayudamos.</MudText>
+        <MudButton Href="tickets/new" Variant="Variant.Filled" Color="Color.Primary">Crear ticket</MudButton>
+    </MudPaper>
+}
+else
+{
+    <MudStack Spacing="2">
+        @foreach (var t in _items)
+        {
+            <MudPaper Class="pa-4" Elevation="0" Outlined="true">
+                <MudStack Row="true" AlignItems="AlignItems.Center">
+                    <div class="flex-grow-1">
+                        <a class="sai-link" href="tickets/@t.Id"><MudText Typo="Typo.subtitle1"><b>#@t.Number · @t.Subject</b></MudText></a>
+                        <MudText Typo="Typo.caption">Creado @Ui.Relative(t.CreatedAt) · @t.MessageCount mensajes</MudText>
+                    </div>
+                    <StatusChip Status="t.Status" />
+                </MudStack>
+            </MudPaper>
+        }
+    </MudStack>
+}
+
+@code {
+    private List<TicketSummaryDto> _items = [];
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Hub.TicketChanged += OnTicketChanged;
+        await Hub.EnsureStartedAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var page = await Api.GetTicketsAsync(new TicketListQuery { PageSize = 50, IncludeClosed = true });
+            _items = page.Items.ToList();
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Task OnTicketChanged(TicketChangedNotification _) => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public ValueTask DisposeAsync()
+    {
+        Hub.TicketChanged -= OnTicketChanged;
+        return ValueTask.CompletedTask;
+    }
+}

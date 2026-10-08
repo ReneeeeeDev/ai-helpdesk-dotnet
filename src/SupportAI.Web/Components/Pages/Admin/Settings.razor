@@ -1,0 +1,147 @@
+@page "/admin/settings"
+@inject SupportAIApiClient Api
+@inject SessionStore Session
+@inject ISnackbar Snackbar
+
+<PageTitle>Configuración · SupportAI</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4"><b>Configuración de @(_settings?.Name ?? "la organización")</b></MudText>
+
+@if (!Session.IsAdmin)
+{
+    <MudAlert Severity="Severity.Info">Solo administradores.</MudAlert>
+    return;
+}
+
+@if (_settings is null || _sla is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+    return;
+}
+
+<MudGrid Spacing="4">
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-5" Elevation="0" Outlined="true">
+            <MudText Typo="Typo.h6" Class="mb-3">Inteligencia artificial</MudText>
+            <MudSwitch T="bool" @bind-Value="_autoTriage" Color="Color.Primary" Label="Triage automático de tickets nuevos" />
+            <MudText Typo="Typo.body2" Class="mt-4">Umbral de confianza para aplicar el triage sin revisión: <b class="sai-num">@Ui.Percent(_threshold)</b></MudText>
+            <MudSlider T="double" @bind-Value="_threshold" Min="0.5" Max="1" Step="0.01" Color="Color.Primary" />
+            <MudText Typo="Typo.caption">Por debajo del umbral, el ticket queda marcado para revisión humana.</MudText>
+            <MudNumericField T="long" Label="Presupuesto mensual de tokens (0 = sin límite)" @bind-Value="_budget" Variant="Variant.Outlined" Min="0" Step="100000" Class="mt-4" />
+
+            <MudText Typo="Typo.subtitle2" Class="mt-5">Taxonomía de categorías</MudText>
+            <MudText Typo="Typo.caption">El modelo solo puede elegir estas categorías (se inyectan como enum en el JSON Schema).</MudText>
+            <div class="mt-2">
+                @foreach (var c in _categories)
+                {
+                    <MudChip T="string" OnClose="() => _categories.Remove(c)" Size="Size.Small">@c</MudChip>
+                }
+            </div>
+            <MudStack Row="true" Class="mt-2">
+                <MudTextField T="string" @bind-Value="_newCategory" Label="Nueva categoría" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudButton Variant="Variant.Outlined" OnClick="AddCategory" Disabled="@string.IsNullOrWhiteSpace(_newCategory)">Añadir</MudButton>
+            </MudStack>
+
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-5" OnClick="SaveSettingsAsync" Disabled="_saving">Guardar configuración</MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-5" Elevation="0" Outlined="true">
+            <MudText Typo="Typo.h6" Class="mb-1">Política de SLA</MudText>
+            <MudText Typo="Typo.caption">Minutos hasta la primera respuesta y hasta la resolución (calendario 24/7; el reloj se pausa en "Pendiente cliente").</MudText>
+            <MudSimpleTable Dense="true" Elevation="0" Class="mt-3">
+                <thead><tr><th>Prioridad</th><th>Primera respuesta (min)</th><th>Resolución (min)</th></tr></thead>
+                <tbody>
+                    @foreach (var target in _targets)
+                    {
+                        <tr>
+                            <td><PriorityChip Priority="target.Priority" /></td>
+                            <td><MudNumericField T="int" @bind-Value="target.FirstResponseMinutes" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                            <td><MudNumericField T="int" @bind-Value="target.ResolutionMinutes" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-4" OnClick="SaveSlaAsync" Disabled="_saving">Guardar SLA</MudButton>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private TenantSettingsDto? _settings;
+    private SlaPolicyDto? _sla;
+    private List<string> _categories = [];
+    private List<EditableTarget> _targets = [];
+    private string? _newCategory;
+    private bool _autoTriage;
+    private double _threshold;
+    private long _budget;
+    private bool _saving;
+
+    private sealed class EditableTarget
+    {
+        public TicketPriority Priority { get; init; }
+
+        public int FirstResponseMinutes { get; set; }
+
+        public int ResolutionMinutes { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.IsAdmin)
+        {
+            return;
+        }
+
+        _settings = await Api.GetSettingsAsync();
+        _sla = await Api.GetSlaPolicyAsync();
+        _categories = _settings.Categories.ToList();
+        _autoTriage = _settings.AutoTriageEnabled;
+        _threshold = (double)_settings.AutoApplyThreshold;
+        _budget = _settings.MonthlyTokenBudget;
+        _targets = _sla.Targets.Select(t => new EditableTarget { Priority = t.Priority, FirstResponseMinutes = t.FirstResponseMinutes, ResolutionMinutes = t.ResolutionMinutes }).ToList();
+    }
+
+    private void AddCategory()
+    {
+        var value = _newCategory!.Trim().ToLowerInvariant().Replace(' ', '-');
+        if (!_categories.Contains(value))
+        {
+            _categories.Add(value);
+        }
+
+        _newCategory = null;
+    }
+
+    private Task SaveSettingsAsync() => SaveAsync(async () =>
+    {
+        _settings = await Api.UpdateSettingsAsync(new UpdateTenantSettingsRequest(_categories, _autoTriage, Math.Round((decimal)_threshold, 2), _budget));
+        Snackbar.Add("Configuración guardada.", Severity.Success);
+    });
+
+    private Task SaveSlaAsync() => SaveAsync(async () =>
+    {
+        _sla = await Api.UpdateSlaPolicyAsync(_targets.Select(t => new SlaTargetDto(t.Priority, t.FirstResponseMinutes, t.ResolutionMinutes)).ToList());
+        Snackbar.Add("Política de SLA guardada. Se aplica a los cambios de prioridad y tickets nuevos.", Severity.Success);
+    });
+
+    private async Task SaveAsync(Func<Task> action)
+    {
+        _saving = true;
+        try
+        {
+            await action();
+        }
+        catch (ApiException ex)
+        {
+            var details = ex.Problem?.Errors is { Count: > 0 } errors ? ": " + string.Join(" ", errors.SelectMany(e => e.Value)) : string.Empty;
+            Snackbar.Add(ex.Message + details, Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

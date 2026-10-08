@@ -1,0 +1,81 @@
+@page "/knowledge/new"
+@page "/knowledge/{Id:guid}/edit"
+@inject SupportAIApiClient Api
+@inject SessionStore Session
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(Id is null ? "Nuevo artículo" : "Editar artículo") · SupportAI</PageTitle>
+
+@if (!Session.IsStaff)
+{
+    <MudAlert Severity="Severity.Info">Solo el equipo de soporte puede editar artículos.</MudAlert>
+    return;
+}
+
+<MudText Typo="Typo.h5" Class="mb-4"><b>@(Id is null ? "Nuevo artículo" : "Editar artículo")</b></MudText>
+
+<MudPaper Class="pa-6" Elevation="0" Outlined="true" Style="max-width: 900px;">
+    <MudTextField T="string" Label="Título" @bind-Value="_title" Variant="Variant.Outlined" Class="mb-3" Required="true" MaxLength="200" />
+    <MudSelect T="string" Label="Categoría" @bind-Value="_category" Variant="Variant.Outlined" Class="mb-3" Clearable="true">
+        @foreach (var c in _categories)
+        {
+            <MudSelectItem T="string" Value="@c">@c</MudSelectItem>
+        }
+    </MudSelect>
+    <MudTextField T="string" Label="Tags (separados por coma)" @bind-Value="_tags" Variant="Variant.Outlined" Class="mb-3" />
+    <MudTextField T="string" Label="Contenido (Markdown)" @bind-Value="_body" Variant="Variant.Outlined" Lines="16" Class="mb-3" Required="true"
+                  HelperText="La IA cita este artículo en las respuestas sugeridas: escribe pasos concretos y verificables." />
+    <MudSwitch T="bool" @bind-Value="_published" Color="Color.Success" Label="Publicado (visible para clientes y para la IA)" />
+    <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-4">
+        <MudButton Href="knowledge" Variant="Variant.Text">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_saving">Guardar</MudButton>
+    </MudStack>
+</MudPaper>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private string _title = string.Empty;
+    private string _body = string.Empty;
+    private string? _category;
+    private string? _tags;
+    private bool _published = true;
+    private bool _saving;
+    private List<string> _categories = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.IsStaff)
+        {
+            return;
+        }
+
+        _categories = await Api.GetCategoriesAsync();
+        if (Id is { } id)
+        {
+            var a = await Api.GetArticleAsync(id);
+            (_title, _body, _category, _tags, _published) = (a.Title, a.Body, a.Category, string.Join(", ", a.Tags), a.IsPublished);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            var tags = (_tags ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            var saved = await Api.SaveArticleAsync(Id, new UpsertArticleRequest(_title, _body, _category, tags, _published));
+            Snackbar.Add("Artículo guardado.", Severity.Success);
+            Nav.NavigateTo($"knowledge/{saved.Id}");
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

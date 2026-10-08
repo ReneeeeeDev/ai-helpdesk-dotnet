@@ -1,0 +1,83 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject SessionStore Session
+@inject SupportAIApiClient Api
+@inject NavigationManager Nav
+
+<MudThemeProvider Theme="Ui.Theme" @bind-IsDarkMode="_dark" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+@if (!_ready)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (Session.User is { } user)
+{
+    <MudLayout>
+        <MudAppBar Elevation="0" Dense="true">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="() => _drawer = !_drawer" aria-label="Menú" />
+            <MudText Typo="Typo.h6" Class="ml-2">SupportAI</MudText>
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ml-3" Style="color: #fff; border-color: rgba(255,255,255,.55);">@user.TenantName</MudChip>
+            <MudSpacer />
+            <MudTooltip Text="@(_dark ? "Tema claro" : "Tema oscuro")">
+                <MudIconButton Icon="@(_dark ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)" Color="Color.Inherit" OnClick="() => _dark = !_dark" />
+            </MudTooltip>
+            <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                <ActivatorContent>
+                    <MudButton Color="Color.Inherit" StartIcon="@Icons.Material.Filled.AccountCircle">@user.DisplayName</MudButton>
+                </ActivatorContent>
+                <ChildContent>
+                    <MudMenuItem Disabled="true">@Ui.RoleLabel(user.Role) · @user.Email</MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Filled.Logout" OnClick="LogoutAsync">Cerrar sesión</MudMenuItem>
+                </ChildContent>
+            </MudMenu>
+        </MudAppBar>
+        <MudDrawer @bind-Open="_drawer" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="DrawerVariant.Responsive">
+            <NavMenu />
+        </MudDrawer>
+        <MudMainContent>
+            <MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="py-6">
+                <CascadingValue Value="_dark" Name="IsDarkMode">
+                    @Body
+                </CascadingValue>
+            </MudContainer>
+        </MudMainContent>
+    </MudLayout>
+}
+
+@code {
+    private bool _ready;
+    private bool _drawer = true;
+    private bool _dark;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        await Session.EnsureLoadedAsync();
+        if (Session.User is null)
+        {
+            Nav.NavigateTo($"login?returnUrl={Uri.EscapeDataString(Nav.ToBaseRelativePath(Nav.Uri))}", replace: true);
+            return;
+        }
+
+        _ready = true;
+    }
+
+    private void OnSessionChanged()
+    {
+        if (Session.User is null)
+        {
+            InvokeAsync(() => Nav.NavigateTo("login", replace: true));
+        }
+    }
+
+    private async Task LogoutAsync()
+    {
+        await Api.LogoutAsync();
+        Nav.NavigateTo("login", replace: true);
+    }
+
+    public void Dispose() => Session.Changed -= OnSessionChanged;
+}

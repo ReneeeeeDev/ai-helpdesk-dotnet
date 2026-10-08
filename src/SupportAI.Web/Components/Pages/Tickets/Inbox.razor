@@ -1,0 +1,205 @@
+@page "/inbox"
+@implements IAsyncDisposable
+@inject SupportAIApiClient Api
+@inject TicketHubClient Hub
+@inject SessionStore Session
+@inject ISnackbar Snackbar
+
+<PageTitle>Bandeja · SupportAI</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h5"><b>Bandeja de tickets</b></MudText>
+    <MudChip T="string" Size="Size.Small" Class="sai-num">@_total</MudChip>
+    <MudSpacer />
+    @if (Hub.IsConnected)
+    {
+        <MudTooltip Text="Actualización en tiempo real activa (SignalR)">
+            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Bolt">En vivo</MudChip>
+        </MudTooltip>
+    }
+</MudStack>
+
+@if (!Session.IsStaff)
+{
+    <MudAlert Severity="Severity.Info">Esta vista es para el equipo de soporte.</MudAlert>
+    return;
+}
+
+<MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="3">
+            <MudTextField T="string" @bind-Value="_filter.Search" Label="Buscar (texto o #número)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" DebounceInterval="400" OnDebounceIntervalElapsed="ReloadAsync" Clearable="true" />
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudSelect T="TicketStatus?" Label="Estado" @bind-Value="_filter.Status" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" SelectedValuesChanged="_ => ReloadAsync()">
+                @foreach (var s in Enum.GetValues<TicketStatus>())
+                {
+                    <MudSelectItem T="TicketStatus?" Value="@s">@Ui.StatusLabel(s)</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudSelect T="TicketPriority?" Label="Prioridad" @bind-Value="_filter.Priority" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" SelectedValuesChanged="_ => ReloadAsync()">
+                @foreach (var p in Enum.GetValues<TicketPriority>())
+                {
+                    <MudSelectItem T="TicketPriority?" Value="@p">@Ui.PriorityLabel(p)</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudSelect T="TicketSort" Label="Orden" @bind-Value="_filter.Sort" Variant="Variant.Outlined" Margin="Margin.Dense" SelectedValuesChanged="_ => ReloadAsync()">
+                <MudSelectItem T="TicketSort" Value="TicketSort.Newest">Más recientes</MudSelectItem>
+                <MudSelectItem T="TicketSort" Value="TicketSort.Oldest">Más antiguos</MudSelectItem>
+                <MudSelectItem T="TicketSort" Value="TicketSort.Priority">Prioridad</MudSelectItem>
+                <MudSelectItem T="TicketSort" Value="TicketSort.DueSoon">Vencimiento SLA</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex align-center flex-wrap gap-2">
+            <MudSwitch T="bool" Value="_filter.OnlyMine" ValueChanged="v => SetAsync(f => f.OnlyMine = v)" Color="Color.Primary" Label="Solo míos" />
+            <MudSwitch T="bool" Value="_filter.NeedsReview == true" ValueChanged="v => SetAsync(f => f.NeedsReview = v ? true : null)" Color="Color.Warning" Label="Revisión IA" />
+            <MudSwitch T="bool" Value="_filter.SlaBreached == true" ValueChanged="v => SetAsync(f => f.SlaBreached = v ? true : null)" Color="Color.Error" Label="SLA incumplido" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable T="TicketSummaryDto" Items="_items" Hover="true" Dense="true" Loading="_loading" Elevation="0" Outlined="true" Breakpoint="Breakpoint.Sm">
+    <HeaderContent>
+        <MudTh>#</MudTh>
+        <MudTh>Asunto</MudTh>
+        <MudTh>Estado</MudTh>
+        <MudTh>Prioridad</MudTh>
+        <MudTh>Categoría</MudTh>
+        <MudTh>Equipo / Agente</MudTh>
+        <MudTh>SLA</MudTh>
+        <MudTh>Creado</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="#" Class="sai-num">@context.Number</MudTd>
+        <MudTd DataLabel="Asunto">
+            <a class="sai-link" href="tickets/@context.Id"><b>@context.Subject</b></a>
+            @if (context.NeedsHumanReview)
+            {
+                <MudTooltip Text="La IA pidió revisión humana">
+                    <MudIcon Icon="@Icons.Material.Filled.PersonSearch" Color="Color.Warning" Size="Size.Small" Class="ml-1" Style="vertical-align: middle;" />
+                </MudTooltip>
+            }
+            <MudText Typo="Typo.caption" Class="d-block">@context.RequesterName · @context.MessageCount mensajes</MudText>
+        </MudTd>
+        <MudTd DataLabel="Estado"><StatusChip Status="context.Status" /></MudTd>
+        <MudTd DataLabel="Prioridad"><PriorityChip Priority="context.Priority" /></MudTd>
+        <MudTd DataLabel="Categoría">@(context.Category ?? "—")</MudTd>
+        <MudTd DataLabel="Equipo / Agente">
+            <MudText Typo="Typo.body2">@(context.TeamName ?? "Sin equipo")</MudText>
+            <MudText Typo="Typo.caption">@(context.AssigneeName ?? "Sin asignar")</MudText>
+        </MudTd>
+        <MudTd DataLabel="SLA"><SlaIndicator DueAt="context.ResolutionDueAt" Breached="context.SlaBreached" Status="context.Status" /></MudTd>
+        <MudTd DataLabel="Creado"><MudText Typo="Typo.caption">@Ui.Relative(context.CreatedAt)</MudText></MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText Class="pa-4">No hay tickets con estos filtros.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@if (_nextCursor is not null)
+{
+    <div class="d-flex justify-center mt-4">
+        <MudButton Variant="Variant.Outlined" OnClick="LoadMoreAsync" Disabled="_loading">Cargar más</MudButton>
+    </div>
+}
+
+@code {
+    private readonly List<TicketSummaryDto> _items = [];
+    private Filter _filter = new();
+    private string? _nextCursor;
+    private int _total;
+    private bool _loading;
+    private DateTimeOffset _lastRealtimeReload;
+
+    private sealed class Filter
+    {
+        public string? Search { get; set; }
+
+        public TicketStatus? Status { get; set; }
+
+        public TicketPriority? Priority { get; set; }
+
+        public TicketSort Sort { get; set; } = TicketSort.Newest;
+
+        public bool OnlyMine { get; set; }
+
+        public bool? NeedsReview { get; set; }
+
+        public bool? SlaBreached { get; set; }
+
+        public TicketListQuery ToQuery(string? cursor) => new()
+        {
+            Search = Search, Status = Status, Priority = Priority, Sort = Sort, OnlyMine = OnlyMine,
+            NeedsReview = NeedsReview, SlaBreached = SlaBreached, Cursor = cursor, PageSize = 25,
+        };
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.IsStaff)
+        {
+            return;
+        }
+
+        Hub.TicketChanged += OnTicketChanged;
+        await Hub.EnsureStartedAsync();
+        await ReloadAsync();
+    }
+
+    private async Task SetAsync(Action<Filter> change)
+    {
+        change(_filter);
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _nextCursor = null;
+        _items.Clear();
+        await LoadMoreAsync();
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        _loading = true;
+        try
+        {
+            var page = await Api.GetTicketsAsync(_filter.ToQuery(_nextCursor));
+            _items.AddRange(page.Items);
+            _nextCursor = page.NextCursor;
+            _total = page.TotalCount;
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Task OnTicketChanged(TicketChangedNotification notification) => InvokeAsync(async () =>
+    {
+        // Ráfagas de eventos (p.ej. el seed) → como mucho una recarga cada 2 segundos.
+        if (DateTimeOffset.UtcNow - _lastRealtimeReload < TimeSpan.FromSeconds(2))
+        {
+            return;
+        }
+
+        _lastRealtimeReload = DateTimeOffset.UtcNow;
+        await ReloadAsync();
+        StateHasChanged();
+    });
+
+    public ValueTask DisposeAsync()
+    {
+        Hub.TicketChanged -= OnTicketChanged;
+        return ValueTask.CompletedTask;
+    }
+}

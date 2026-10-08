@@ -1,0 +1,11 @@
+@page "/"
+@inject SessionStore Session
+@inject NavigationManager Nav
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.EnsureLoadedAsync();
+        Nav.NavigateTo(Session.IsStaff ? "inbox" : "my-tickets", replace: true);
+    }
+}

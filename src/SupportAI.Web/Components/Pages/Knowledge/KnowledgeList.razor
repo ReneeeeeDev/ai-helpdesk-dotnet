@@ -1,0 +1,77 @@
+@page "/knowledge"
+@inject SupportAIApiClient Api
+@inject SessionStore Session
+@inject ISnackbar Snackbar
+
+<PageTitle>Base de conocimiento · SupportAI</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h5"><b>@(Session.IsStaff ? "Base de conocimiento" : "Centro de ayuda")</b></MudText>
+    <MudSpacer />
+    @if (Session.IsStaff)
+    {
+        <MudButton Href="knowledge/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">Nuevo artículo</MudButton>
+    }
+</MudStack>
+
+<MudTextField T="string" @bind-Value="_search" Label="Buscar artículos" Variant="Variant.Outlined" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+              DebounceInterval="350" OnDebounceIntervalElapsed="LoadAsync" Clearable="true" Class="mb-4" HelperText="La búsqueda ordena por relevancia (título, tags y contenido; insensible a tildes)." />
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+
+<MudGrid Spacing="3">
+    @foreach (var a in _articles)
+    {
+        <MudItem xs="12" sm="6" md="4">
+            <MudCard Elevation="0" Outlined="true" Style="height: 100%;">
+                <MudCardContent>
+                    <a class="sai-link" href="knowledge/@a.Id"><MudText Typo="Typo.subtitle1"><b>@a.Title</b></MudText></a>
+                    <MudText Typo="Typo.caption">@(a.Category ?? "general") · actualizado @Ui.Relative(a.UpdatedAt ?? a.CreatedAt)</MudText>
+                    <div class="mt-2">
+                        @foreach (var tag in a.Tags)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@tag</MudChip>
+                        }
+                        @if (!a.IsPublished)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning">Borrador</MudChip>
+                        }
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    }
+</MudGrid>
+
+@if (!_loading && _articles.Count == 0)
+{
+    <MudText Class="mt-4">No se encontraron artículos.</MudText>
+}
+
+@code {
+    private List<KnowledgeArticleSummaryDto> _articles = [];
+    private string? _search;
+    private bool _loading;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _articles = await Api.GetArticlesAsync(_search, includeUnpublished: Session.IsStaff);
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

@@ -49,6 +49,7 @@ internal sealed class KnowledgeSearch(IApplicationDbContext db) : IKnowledgeSear
             .Where(a => a.Category == normalizedCategory
                 || keywords.Any(k => EF.Functions.Collate(a.Title, AccentInsensitiveCollation).Contains(k)
                     || EF.Functions.Collate(a.Body, AccentInsensitiveCollation).Contains(k)))
+            .OrderByDescending(a => a.UpdatedAt ?? a.CreatedAt)
             .Select(a => new { a.Id, a.Title, a.Category, a.Body, a.Tags })
             .Take(100)
             .ToListAsync(ct);

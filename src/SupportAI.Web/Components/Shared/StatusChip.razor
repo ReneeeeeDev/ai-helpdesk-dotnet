@@ -1,0 +1,5 @@
+<MudChip T="string" Size="Size.Small" Color="Ui.StatusColor(Status)" Variant="Variant.Text">@Ui.StatusLabel(Status)</MudChip>
+
+@code {
+    [Parameter, EditorRequired] public TicketStatus Status { get; set; }
+}

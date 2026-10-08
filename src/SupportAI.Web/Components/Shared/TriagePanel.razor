@@ -1,0 +1,190 @@
+@inject SupportAIApiClient Api
+@inject ISnackbar Snackbar
+
+<MudCard Elevation="0" Outlined="true">
+    <MudCardHeader>
+        <CardHeaderAvatar><MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" /></CardHeaderAvatar>
+        <CardHeaderContent>
+            <MudText Typo="Typo.subtitle1"><b>Triage con IA</b></MudText>
+            @if (Triage is not null)
+            {
+                <MudText Typo="Typo.caption">@Ui.TriageStatusLabel(Triage.Status) · prompt v@(Triage.PromptVersion) · @Triage.Model</MudText>
+            }
+        </CardHeaderContent>
+        <CardHeaderActions>
+            <MudTooltip Text="Volver a clasificar con la versión activa del prompt">
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh" Disabled="_busy" OnClick="RetriageAsync" aria-label="Reclasificar" />
+            </MudTooltip>
+        </CardHeaderActions>
+    </MudCardHeader>
+    <MudCardContent Class="pt-0">
+        @if (_busy)
+        {
+            <MudProgressLinear Indeterminate="true" Class="mb-3" />
+        }
+
+        @if (Triage is null)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Default">El ticket todavía no tiene triage. Se ejecuta automáticamente al crearlo.</MudText>
+        }
+        else if (Triage.Status == TriageResultStatus.Invalid)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true">La salida del modelo no pasó la validación: @Triage.ValidationErrors</MudAlert>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Elevation="0" Class="mb-3">
+                <tbody>
+                    <tr><td>Categoría</td><td><b>@Triage.Category</b></td></tr>
+                    <tr><td>Prioridad</td><td><PriorityChip Priority="Triage.Priority" /></td></tr>
+                    <tr><td>Equipo</td><td>@(Triage.SuggestedTeam ?? "—")</td></tr>
+                    <tr><td>Sentimiento</td><td>@Ui.SentimentLabel(Triage.Sentiment)</td></tr>
+                    <tr><td>Idioma</td><td>@Triage.Language?.ToUpperInvariant()</td></tr>
+                </tbody>
+            </MudSimpleTable>
+
+            <MudText Typo="Typo.caption">Confianza</MudText>
+            <MudProgressLinear Value="@((double)Triage.Confidence * 100)" Color="@ConfidenceColor" Size="Size.Medium" Rounded="true" Class="mb-1" />
+            <MudText Typo="Typo.caption" Class="sai-num">@Ui.Percent((double)Triage.Confidence)</MudText>
+
+            @if (Triage.Tags.Count > 0)
+            {
+                <div class="mt-2">
+                    @foreach (var tag in Triage.Tags)
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@tag</MudChip>
+                    }
+                </div>
+            }
+
+            @if (Triage.RequiresHuman || Triage.ContainsPii)
+            {
+                <MudStack Row="true" Class="mt-2" Spacing="1">
+                    @if (Triage.RequiresHuman)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Icon="@Icons.Material.Filled.PersonSearch">Requiere humano</MudChip>
+                    }
+                    @if (Triage.ContainsPii)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info" Icon="@Icons.Material.Filled.Shield">Contiene PII</MudChip>
+                    }
+                </MudStack>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(Triage.Reasoning))
+            {
+                <MudText Typo="Typo.body2" Class="mt-3"><i>@Triage.Reasoning</i></MudText>
+            }
+
+            @if (Triage.Status is TriageResultStatus.Suggested or TriageResultStatus.AutoApplied)
+            {
+                <MudDivider Class="my-3" />
+                @if (!_overriding)
+                {
+                    <MudStack Row="true">
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Check" Disabled="_busy" OnClick="AcceptAsync">Aceptar</MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Edit" Disabled="_busy" OnClick="StartOverride">Corregir</MudButton>
+                    </MudStack>
+                }
+                else
+                {
+                    <MudSelect T="string" Label="Categoría" @bind-Value="_category" Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+                        @foreach (var c in Categories)
+                        {
+                            <MudSelectItem T="string" Value="@c">@c</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudSelect T="TicketPriority" Label="Prioridad" @bind-Value="_priority" Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" Class="mt-2">
+                        @foreach (var p in Enum.GetValues<TicketPriority>())
+                        {
+                            <MudSelectItem T="TicketPriority" Value="@p">@Ui.PriorityLabel(p)</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudSelect T="Guid?" Label="Equipo" @bind-Value="_teamId" Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" Class="mt-2" Clearable="true">
+                        @foreach (var t in Teams)
+                        {
+                            <MudSelectItem T="Guid?" Value="@t.Id">@t.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudTextField T="string" Label="Motivo de la corrección" @bind-Value="_notes" Lines="2" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+                    <MudStack Row="true" Class="mt-2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="_busy" OnClick="OverrideAsync">Guardar corrección</MudButton>
+                        <MudButton Size="Size.Small" OnClick="() => _overriding = false">Cancelar</MudButton>
+                    </MudStack>
+                }
+            }
+        }
+    </MudCardContent>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public Guid TicketId { get; set; }
+
+    [Parameter] public TriageResultDto? Triage { get; set; }
+
+    [Parameter] public IReadOnlyList<string> Categories { get; set; } = [];
+
+    [Parameter] public IReadOnlyList<TeamDto> Teams { get; set; } = [];
+
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool _busy;
+    private bool _overriding;
+    private string? _category;
+    private TicketPriority _priority;
+    private Guid? _teamId;
+    private string? _notes;
+
+    private Color ConfidenceColor => Triage?.Confidence switch
+    {
+        >= 0.8m => Color.Success,
+        >= 0.6m => Color.Warning,
+        _ => Color.Error,
+    };
+
+    private void StartOverride()
+    {
+        _category = Triage?.Category;
+        _priority = Triage?.Priority ?? TicketPriority.Normal;
+        _teamId = Triage?.SuggestedTeamId;
+        _notes = null;
+        _overriding = true;
+    }
+
+    private Task RetriageAsync() => RunAsync(async () =>
+    {
+        await Api.RetriageAsync(TicketId);
+        Snackbar.Add("Ticket clasificado de nuevo.", Severity.Success);
+    });
+
+    private Task AcceptAsync() => RunAsync(async () =>
+    {
+        await Api.AcceptTriageAsync(TicketId, Triage!.Id);
+        Snackbar.Add("Triage aceptado.", Severity.Success);
+    });
+
+    private Task OverrideAsync() => RunAsync(async () =>
+    {
+        await Api.OverrideTriageAsync(TicketId, Triage!.Id, new OverrideTriageRequest(_category, _priority, _teamId, _notes));
+        _overriding = false;
+        Snackbar.Add("Corrección guardada. Cuenta como señal para mejorar el prompt.", Severity.Success);
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        try
+        {
+            await action();
+            await OnChanged.InvokeAsync();
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

@@ -1,0 +1,107 @@
+@page "/login"
+@layout EmptyLayout
+@inject SupportAIApiClient Api
+@inject SessionStore Session
+@inject NavigationManager Nav
+
+<PageTitle>Iniciar sesión · SupportAI</PageTitle>
+
+<MudPaper Class="pa-8 w-100" Elevation="2">
+    <MudStack Spacing="1" Class="mb-6">
+        <MudText Typo="Typo.h4"><b>SupportAI</b></MudText>
+        <MudText Typo="Typo.body1" Color="Color.Default">Mesa de ayuda con triage, respuestas y copiloto impulsados por Claude.</MudText>
+    </MudStack>
+
+    <EditForm Model="_model" OnValidSubmit="LoginAsync">
+        <DataAnnotationsValidator />
+        <MudTextField T="string" Label="Email" @bind-Value="_model.Email" For="() => _model.Email" Variant="Variant.Outlined" InputType="InputType.Email" Class="mb-3" autocomplete="username" />
+        <MudTextField T="string" Label="Contraseña" @bind-Value="_model.Password" For="() => _model.Password" Variant="Variant.Outlined" InputType="InputType.Password" Class="mb-3" autocomplete="current-password" />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_error</MudAlert>
+        }
+
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large" Disabled="_busy">
+            @if (_busy)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Entrar
+        </MudButton>
+    </EditForm>
+
+    <MudDivider Class="my-6" />
+    <MudText Typo="Typo.caption" Color="Color.Default">Cuentas de demostración (contraseña <code>Passw0rd!</code>):</MudText>
+    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1" Class="mt-2">
+        @foreach (var (label, email) in DemoAccounts)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="() => Fill(email)">@label</MudButton>
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private static readonly (string Label, string Email)[] DemoAccounts =
+    [
+        ("Admin", "admin@acme.test"),
+        ("Agente soporte", "agente@acme.test"),
+        ("Agente facturación", "facturacion@acme.test"),
+        ("Cliente", "cliente@acme.test"),
+    ];
+
+    private readonly LoginModel _model = new();
+    private string? _error;
+    private bool _busy;
+
+    private sealed class LoginModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "El email es obligatorio")]
+        [System.ComponentModel.DataAnnotations.EmailAddress(ErrorMessage = "Email no válido")]
+        public string Email { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "La contraseña es obligatoria")]
+        public string Password { get; set; } = string.Empty;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.EnsureLoadedAsync();
+        if (Session.User is not null)
+        {
+            Nav.NavigateTo("", replace: true);
+        }
+    }
+
+    private void Fill(string email)
+    {
+        _model.Email = email;
+        _model.Password = "Passw0rd!";
+    }
+
+    private async Task LoginAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Api.LoginAsync(_model.Email, _model.Password);
+            var target = string.IsNullOrWhiteSpace(ReturnUrl) || ReturnUrl.StartsWith("login", StringComparison.OrdinalIgnoreCase) ? "" : ReturnUrl;
+            Nav.NavigateTo(target, replace: true);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "No se pudo contactar con la API. ¿Está en ejecución?";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

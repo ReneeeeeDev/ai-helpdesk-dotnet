@@ -70,3 +70,12 @@ public sealed class SettingsController(ISender sender) : ApiControllerBase
     public async Task<ActionResult<TenantSettingsDto>> Update(UpdateTenantSettingsRequest request, CancellationToken ct) =>
         Ok(await sender.Send(new UpdateTenantSettingsCommand(request), ct));
 }
+
+/// <summary>Taxonomía de categorías del tenant (para formularios de triage y filtros).</summary>
+[Authorize(Policy = Policies.Staff)]
+public sealed class CategoriesController(ISender sender) : ApiControllerBase
+{
+    [HttpGet]
+    [ProducesResponseType<IReadOnlyList<string>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<string>>> List(CancellationToken ct) => Ok(await sender.Send(new GetCategoriesQuery(), ct));
+}

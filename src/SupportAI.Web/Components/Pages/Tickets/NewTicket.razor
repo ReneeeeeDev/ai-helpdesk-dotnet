@@ -1,0 +1,59 @@
+@page "/tickets/new"
+@inject SupportAIApiClient Api
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Nuevo ticket · SupportAI</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4"><b>Nuevo ticket</b></MudText>
+
+<MudPaper Class="pa-6" Elevation="0" Outlined="true" Style="max-width: 820px;">
+    <EditForm Model="_model" OnValidSubmit="SubmitAsync">
+        <DataAnnotationsValidator />
+        <MudTextField T="string" Label="Asunto" @bind-Value="_model.Subject" For="() => _model.Subject" Variant="Variant.Outlined" Counter="200" MaxLength="200" Class="mb-4" />
+        <MudTextField T="string" Label="Describe el problema" @bind-Value="_model.Description" For="() => _model.Description" Variant="Variant.Outlined"
+                      Lines="8" HelperText="Incluye qué intentabas hacer, qué esperabas y qué pasó. Evita compartir contraseñas o datos de tarjetas." Class="mb-4" />
+        <MudStack Row="true" Justify="Justify.FlexEnd">
+            <MudButton Href="my-tickets" Variant="Variant.Text">Cancelar</MudButton>
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" StartIcon="@Icons.Material.Filled.Send">Enviar</MudButton>
+        </MudStack>
+    </EditForm>
+</MudPaper>
+
+@code {
+    private readonly NewTicketModel _model = new();
+
+    // Una clave por formulario: si el usuario hace doble clic o la red reintenta, la API no crea duplicados.
+    private readonly string _idempotencyKey = Guid.NewGuid().ToString("N");
+    private bool _busy;
+
+    private sealed class NewTicketModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "El asunto es obligatorio")]
+        [System.ComponentModel.DataAnnotations.StringLength(200)]
+        public string Subject { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "La descripción es obligatoria")]
+        [System.ComponentModel.DataAnnotations.MinLength(10, ErrorMessage = "Cuéntanos un poco más (mínimo 10 caracteres)")]
+        public string Description { get; set; } = string.Empty;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        try
+        {
+            var created = await Api.CreateTicketAsync(new CreateTicketRequest(_model.Subject, _model.Description, TicketChannel.Web), _idempotencyKey);
+            Snackbar.Add($"Ticket #{created.Number} creado. Lo estamos clasificando.", Severity.Success);
+            Nav.NavigateTo($"tickets/{created.Id}");
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

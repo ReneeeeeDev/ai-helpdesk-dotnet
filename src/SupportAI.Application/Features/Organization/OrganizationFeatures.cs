@@ -156,6 +156,21 @@ internal sealed class UpdateSlaPolicyHandler(IApplicationDbContext db) : IComman
     }
 }
 
+// ───────────────────────────── Categorías (staff) ─────────────────────────────
+
+[AuthorizeRoles(UserRole.Agent, UserRole.Admin)]
+public sealed record GetCategoriesQuery : IQuery<IReadOnlyList<string>>;
+
+internal sealed class GetCategoriesHandler(IApplicationDbContext db, ITenantContext tenant) : IQueryHandler<GetCategoriesQuery, IReadOnlyList<string>>
+{
+    public async Task<IReadOnlyList<string>> Handle(GetCategoriesQuery query, CancellationToken ct)
+    {
+        var t = await db.Tenants.AsNoTracking().FirstOrDefaultAsync(x => x.Id == tenant.RequiredTenantId, ct)
+            ?? throw new NotFoundException("Tenant", tenant.RequiredTenantId);
+        return t.Categories;
+    }
+}
+
 // ───────────────────────────── Configuración del tenant ─────────────────────────────
 
 [AuthorizeRoles(UserRole.Admin)]

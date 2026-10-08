@@ -1,0 +1,8 @@
+<MudChip T="string" Size="Size.Small" Color="Ui.PriorityColor(Priority)" Variant="@(Priority >= TicketPriority.High ? Variant.Filled : Variant.Outlined)"
+         Icon="@(Priority == TicketPriority.Urgent ? Icons.Material.Filled.PriorityHigh : null)">
+    @Ui.PriorityLabel(Priority)
+</MudChip>
+
+@code {
+    [Parameter, EditorRequired] public TicketPriority Priority { get; set; }
+}

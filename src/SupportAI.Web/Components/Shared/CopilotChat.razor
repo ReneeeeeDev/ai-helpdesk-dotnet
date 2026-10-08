@@ -1,0 +1,120 @@
+@implements IDisposable
+@inject SupportAIApiClient Api
+
+<MudStack Spacing="2">
+    @if (_turns.Count == 0)
+    {
+        <MudText Typo="Typo.body2" Color="Color.Default">
+            Pregunta en lenguaje natural. Ejemplos: <i>"¿Qué tickets urgentes siguen abiertos?"</i>,
+            <i>"¿Cuándo vence el SLA del ticket actual?"</i>, <i>"¿Cómo se resuelven los errores 401 en webhooks?"</i>
+        </MudText>
+    }
+
+    @foreach (var turn in _turns)
+    {
+        <div class="sai-message customer"><b>Tú:</b> @turn.Question</div>
+        @foreach (var tool in turn.Tools)
+        {
+            <MudChip T="string" Size="Size.Small" Icon="@Icons.Material.Filled.Build" Variant="Variant.Outlined">@tool</MudChip>
+        }
+        @if (turn.Answer.Length > 0)
+        {
+            <div class="sai-message agent sai-pre">@turn.Answer.ToString()</div>
+        }
+        else if (turn.Pending)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Secondary" />
+        }
+    }
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true">@_error</MudAlert>
+    }
+
+    <MudStack Row="true" AlignItems="AlignItems.End">
+        <MudTextField T="string" @bind-Value="_question" Label="Pregunta al copiloto" Variant="Variant.Outlined" Lines="2" Class="flex-grow-1"
+                      Disabled="_busy" OnKeyDown="OnKeyDown" Immediate="true" />
+        <MudIconButton Icon="@Icons.Material.Filled.Send" Color="Color.Primary" Variant="Variant.Filled" Disabled="@(_busy || string.IsNullOrWhiteSpace(_question))"
+                       OnClick="AskAsync" aria-label="Enviar" />
+    </MudStack>
+</MudStack>
+
+@code {
+    [Parameter] public Guid? TicketId { get; set; }
+
+    private readonly List<Turn> _turns = [];
+    private CancellationTokenSource? _cts;
+    private string? _question;
+    private string? _error;
+    private bool _busy;
+
+    private sealed class Turn(string question)
+    {
+        public string Question { get; } = question;
+
+        public List<string> Tools { get; } = [];
+
+        public System.Text.StringBuilder Answer { get; } = new();
+
+        public bool Pending { get; set; } = true;
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e is { Key: "Enter", ShiftKey: false } && !string.IsNullOrWhiteSpace(_question))
+        {
+            await AskAsync();
+        }
+    }
+
+    private async Task AskAsync()
+    {
+        var question = _question!.Trim();
+        _question = null;
+        _error = null;
+        _busy = true;
+        var turn = new Turn(question);
+        _turns.Add(turn);
+        _cts = new CancellationTokenSource();
+
+        try
+        {
+            await foreach (var sse in Api.AskCopilotAsync(new CopilotRequest(question, TicketId), _cts.Token))
+            {
+                switch (sse.Event)
+                {
+                    case "tool":
+                        turn.Tools.Add($"{sse.GetString("toolName")}");
+                        break;
+                    case "text":
+                        turn.Answer.Append(sse.GetString("text"));
+                        break;
+                    case "error":
+                        _error = sse.GetString("message");
+                        break;
+                }
+
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            turn.Pending = false;
+            _busy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

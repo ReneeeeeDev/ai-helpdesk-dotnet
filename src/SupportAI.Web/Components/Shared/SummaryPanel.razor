@@ -1,0 +1,80 @@
+@implements IDisposable
+@inject SupportAIApiClient Api
+
+<MudCard Elevation="0" Outlined="true">
+    <MudCardHeader>
+        <CardHeaderAvatar><MudIcon Icon="@Icons.Material.Filled.Summarize" Color="Color.Secondary" /></CardHeaderAvatar>
+        <CardHeaderContent><MudText Typo="Typo.subtitle1"><b>Resumen del hilo</b></MudText></CardHeaderContent>
+        <CardHeaderActions>
+            @if (_streaming)
+            {
+                <MudIconButton Icon="@Icons.Material.Filled.Stop" OnClick="Cancel" aria-label="Detener" />
+            }
+            else
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.PlayArrow" OnClick="StreamAsync">Resumir</MudButton>
+            }
+        </CardHeaderActions>
+    </MudCardHeader>
+    @if (_text.Length > 0 || _error is not null)
+    {
+        <MudCardContent Class="pt-0">
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">@_error</MudAlert>
+            }
+            <div class="sai-pre @(_streaming ? "sai-stream-caret" : "")">@_text.ToString()</div>
+        </MudCardContent>
+    }
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public Guid TicketId { get; set; }
+
+    private readonly System.Text.StringBuilder _text = new();
+    private CancellationTokenSource? _cts;
+    private bool _streaming;
+    private string? _error;
+
+    private async Task StreamAsync()
+    {
+        _text.Clear();
+        _error = null;
+        _streaming = true;
+        _cts = new CancellationTokenSource();
+        try
+        {
+            await foreach (var sse in Api.StreamSummaryAsync(TicketId, _cts.Token))
+            {
+                if (sse.Event == "delta")
+                {
+                    _text.Append(sse.GetString("text"));
+                    StateHasChanged();
+                }
+                else if (sse.Event == "error")
+                {
+                    _error = sse.GetString("message");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _streaming = false;
+        }
+    }
+
+    private void Cancel() => _cts?.Cancel();
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

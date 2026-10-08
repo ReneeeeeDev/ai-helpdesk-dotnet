@@ -58,6 +58,7 @@ public sealed partial class SlaMonitor(
                 .Where(t =>
                     (!t.FirstResponseBreached && t.FirstRespondedAt == null && t.FirstResponseDueAt < now) ||
                     (!t.ResolutionBreached && t.SlaPausedAt == null && t.ResolutionDueAt < now))
+                .OrderBy(t => t.ResolutionDueAt)
                 .Select(t => new { t.TenantId, t.Id })
                 .Take(500)
                 .ToListAsync(ct);

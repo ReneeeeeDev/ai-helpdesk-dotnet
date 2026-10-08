@@ -1,0 +1,49 @@
+@page "/knowledge/{Id:guid}"
+@inject SupportAIApiClient Api
+@inject SessionStore Session
+
+<PageTitle>@(_article?.Title ?? "Artículo") · SupportAI</PageTitle>
+
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Warning">@_error</MudAlert>
+}
+else if (_article is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="knowledge" aria-label="Volver" />
+        <MudText Typo="Typo.h5"><b>@_article.Title</b></MudText>
+        <MudSpacer />
+        @if (Session.IsStaff)
+        {
+            <MudButton Href="@($"knowledge/{Id}/edit")" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit">Editar</MudButton>
+        }
+    </MudStack>
+    <MudPaper Class="pa-6" Elevation="0" Outlined="true" Style="max-width: 860px;">
+        <MudText Typo="Typo.caption">@(_article.Category ?? "general") · actualizado @Ui.Date(_article.UpdatedAt ?? _article.CreatedAt)</MudText>
+        <div class="sai-pre mt-4">@_article.Body</div>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private KnowledgeArticleDto? _article;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try
+        {
+            _article = await Api.GetArticleAsync(Id);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Status == HttpStatusCode.NotFound ? "El artículo no existe o no está publicado." : ex.Message;
+        }
+    }
+}

@@ -1,0 +1,118 @@
+@page "/admin/prompts"
+@inject SupportAIApiClient Api
+@inject SessionStore Session
+@inject ISnackbar Snackbar
+
+<PageTitle>Versiones de prompts · SupportAI</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1"><b>Versiones de prompts</b></MudText>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Los prompts viven versionados en el repositorio (<code>Ai/Prompts/{clave}/v{n}</code>) y se publican aquí al desplegar.
+    Activar una versión cambia el comportamiento sin redeploy; revertir es activar la anterior. Cada llamada registra la versión usada.
+</MudText>
+
+@if (!Session.IsAdmin)
+{
+    <MudAlert Severity="Severity.Info">Solo administradores.</MudAlert>
+    return;
+}
+
+@if (_prompts is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+    return;
+}
+
+@foreach (var group in _prompts.GroupBy(p => p.Key))
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <MudText Typo="Typo.h6" Class="mb-2"><code>@group.Key</code></MudText>
+        <MudSimpleTable Dense="true" Elevation="0" Hover="true">
+            <thead>
+                <tr><th>Versión</th><th>Descripción</th><th>Modelo</th><th>Effort</th><th>Max tokens</th><th>Salida</th><th>Hash</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var p in group.OrderByDescending(p => p.Version))
+                {
+                    <tr>
+                        <td>
+                            v@(p.Version)
+                            @if (p.IsActive)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success">Activa</MudChip>
+                            }
+                        </td>
+                        <td>@p.Description</td>
+                        <td><code>@p.Model</code></td>
+                        <td>@p.Effort</td>
+                        <td class="sai-num">@Ui.Number(p.MaxTokens)</td>
+                        <td>@(p.HasSchema ? "JSON Schema" : "Texto")</td>
+                        <td><code>@p.ContentHash[..10]</code></td>
+                        <td style="white-space: nowrap;">
+                            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => ToggleAsync(p)">@(_openId == p.Id ? "Ocultar" : "Ver")</MudButton>
+                            @if (!p.IsActive)
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" OnClick="() => ActivateAsync(p)">Activar</MudButton>
+                            }
+                        </td>
+                    </tr>
+                    @if (_openId == p.Id && _detail is not null)
+                    {
+                        <tr>
+                            <td colspan="8">
+                                <MudTabs Elevation="0" Rounded="true">
+                                    <MudTabPanel Text="System"><pre class="sai-pre pa-2">@_detail.SystemPrompt</pre></MudTabPanel>
+                                    <MudTabPanel Text="Plantilla de usuario"><pre class="sai-pre pa-2">@_detail.UserTemplate</pre></MudTabPanel>
+                                    @if (_detail.JsonSchema is not null)
+                                    {
+                                        <MudTabPanel Text="JSON Schema"><pre class="sai-pre pa-2">@_detail.JsonSchema</pre></MudTabPanel>
+                                    }
+                                </MudTabs>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+@code {
+    private List<PromptTemplateDto>? _prompts;
+    private PromptTemplateDetailDto? _detail;
+    private Guid? _openId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAdmin)
+        {
+            _prompts = await Api.GetPromptsAsync();
+        }
+    }
+
+    private async Task ToggleAsync(PromptTemplateDto prompt)
+    {
+        if (_openId == prompt.Id)
+        {
+            _openId = null;
+            return;
+        }
+
+        _detail = await Api.GetPromptAsync(prompt.Id);
+        _openId = prompt.Id;
+    }
+
+    private async Task ActivateAsync(PromptTemplateDto prompt)
+    {
+        try
+        {
+            await Api.ActivatePromptAsync(prompt.Key, prompt.Version);
+            Snackbar.Add($"{prompt.Key} v{prompt.Version} activada.", Severity.Success);
+            _prompts = await Api.GetPromptsAsync();
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}
