@@ -58,6 +58,17 @@ public sealed class SupportAIDbContext(DbContextOptions<SupportAIDbContext> opti
     /// </summary>
     internal Guid CurrentTenantId => tenantContext.TenantId ?? Guid.Empty;
 
+    public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken = default)
+    {
+        var strategy = Database.CreateExecutionStrategy();
+        return strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await Database.BeginTransactionAsync(cancellationToken);
+            await action(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        });
+    }
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);

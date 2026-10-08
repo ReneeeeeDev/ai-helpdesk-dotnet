@@ -1,8 +1,14 @@
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
+using SupportAI.Application.Abstractions.Ai;
 using SupportAI.Application.Abstractions.Events;
 using SupportAI.Application.Abstractions.Messaging;
 using SupportAI.Application.Behaviors;
+using SupportAI.Application.Features.Ai.Copilot;
+using SupportAI.Application.Features.Ai.Llm;
+using SupportAI.Application.Features.Ai.Prompting;
+using SupportAI.Application.Features.Ai.Summary;
+using SupportAI.Application.Features.Ai.Triage;
 using SupportAI.Application.Features.Knowledge;
 
 namespace SupportAI.Application;
@@ -26,6 +32,16 @@ public static class DependencyInjection
         ValidatorOptions.Global.LanguageManager.Culture = new System.Globalization.CultureInfo("es");
 
         services.AddScoped<IKnowledgeSearch, KnowledgeSearch>();
+
+        // IA
+        services.AddSingleton<IPiiRedactor, PiiRedactor>();
+        services.AddScoped<IPromptRegistry, PromptRegistry>();
+        services.AddScoped<ILlmCallRecorder, LlmCallRecorder>();
+        services.AddScoped<TokenBudgetGuard>();
+        services.AddScoped<StructuredCompletionService>();
+        services.AddScoped<TicketTriageService>();
+        services.AddScoped<TicketSummaryService>();
+        services.AddScoped<CopilotService>();
 
         return services;
     }

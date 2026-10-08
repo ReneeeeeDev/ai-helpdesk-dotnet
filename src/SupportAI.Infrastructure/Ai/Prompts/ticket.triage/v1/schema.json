@@ -1,0 +1,54 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "category",
+    "priority",
+    "sentiment",
+    "language",
+    "summary",
+    "suggested_team",
+    "tags",
+    "contains_pii",
+    "requires_human",
+    "confidence",
+    "reasoning"
+  ],
+  "properties": {
+    "category": {
+      "type": "string",
+      "description": "Una de las categorías listadas en <categories>."
+    },
+    "priority": {
+      "type": "string",
+      "enum": [ "low", "normal", "high", "urgent" ]
+    },
+    "sentiment": {
+      "type": "string",
+      "enum": [ "very_negative", "negative", "neutral", "positive" ]
+    },
+    "language": {
+      "type": "string",
+      "description": "Código ISO 639-1 de dos letras."
+    },
+    "summary": {
+      "type": "string",
+      "description": "Resumen objetivo de máximo 280 caracteres."
+    },
+    "suggested_team": {
+      "type": "string",
+      "description": "Nombre exacto de un equipo de <teams> o cadena vacía."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "contains_pii": { "type": "boolean" },
+    "requires_human": { "type": "boolean" },
+    "confidence": {
+      "type": "number",
+      "description": "Confianza calibrada entre 0 y 1."
+    },
+    "reasoning": { "type": "string" }
+  }
+}

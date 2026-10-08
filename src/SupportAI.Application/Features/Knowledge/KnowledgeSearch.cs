@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Text;
 using Microsoft.EntityFrameworkCore;
 using SupportAI.Application.Abstractions.Data;
 
@@ -103,19 +101,5 @@ internal sealed class KnowledgeSearch(IApplicationDbContext db) : IKnowledgeSear
             .ThenByDescending(g => g.Key.Length)
             .Select(g => g.Key);
 
-    /// <summary>Minúsculas y sin tildes, para comparar "Facturación" con "facturacion".</summary>
-    internal static string Normalize(string value)
-    {
-        var decomposed = value.ToLowerInvariant().Normalize(NormalizationForm.FormD);
-        var sb = new StringBuilder(decomposed.Length);
-        foreach (var c in decomposed)
-        {
-            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
-            {
-                sb.Append(c);
-            }
-        }
-
-        return sb.ToString().Normalize(NormalizationForm.FormC);
-    }
+    internal static string Normalize(string value) => Common.Text.TextNormalizer.Normalize(value);
 }

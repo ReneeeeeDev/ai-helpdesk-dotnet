@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reply_markdown",
+    "cited_article_ids",
+    "confidence",
+    "should_escalate",
+    "follow_up_questions"
+  ],
+  "properties": {
+    "reply_markdown": {
+      "type": "string",
+      "description": "Borrador completo de la respuesta en Markdown, con firma."
+    },
+    "cited_article_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ids de los artículos de <knowledge_base> utilizados."
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Grado de apoyo en las fuentes, entre 0 y 1."
+    },
+    "should_escalate": { "type": "boolean" },
+    "follow_up_questions": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

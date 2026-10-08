@@ -1,0 +1,9 @@
+{
+  "key": "ticket.triage",
+  "version": 1,
+  "description": "Clasificación inicial: categoría, prioridad, sentimiento, idioma, resumen, equipo y confianza.",
+  "model": "claude-opus-5-5",
+  "effort": "low",
+  "maxTokens": 4000,
+  "activateOnSeed": true
+}

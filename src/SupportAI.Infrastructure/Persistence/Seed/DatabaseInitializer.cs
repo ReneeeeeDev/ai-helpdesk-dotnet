@@ -9,6 +9,7 @@ using SupportAI.Domain.Teams;
 using SupportAI.Domain.Tenants;
 using SupportAI.Domain.Tickets;
 using SupportAI.Domain.Users;
+using SupportAI.Infrastructure.Ai;
 using SupportAI.Infrastructure.Identity;
 
 namespace SupportAI.Infrastructure.Persistence.Seed;
@@ -20,6 +21,7 @@ public sealed partial class DatabaseInitializer(
     SupportAIDbContext db,
     UserManager<AppUser> userManager,
     ITenantScope tenantScope,
+    PromptCatalogSynchronizer promptSynchronizer,
     TimeProvider timeProvider,
     IOptions<DatabaseOptions> options,
     ILogger<DatabaseInitializer> logger)
@@ -35,6 +37,9 @@ public sealed partial class DatabaseInitializer(
             LogApplyingMigrations(logger);
             await db.Database.MigrateAsync(ct);
         }
+
+        // Los prompts versionados del repositorio se publican en la BD en cada arranque (idempotente).
+        await promptSynchronizer.SyncAsync(ct);
 
         if (settings.SeedDemoData && !await db.Tenants.AnyAsync(t => t.Slug == DemoTenantSlug, ct))
         {

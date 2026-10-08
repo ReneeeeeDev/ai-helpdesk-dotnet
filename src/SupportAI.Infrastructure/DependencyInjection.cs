@@ -1,11 +1,18 @@
+using Anthropic;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using SupportAI.Application.Abstractions.Ai;
 using SupportAI.Application.Abstractions.Auth;
 using SupportAI.Application.Abstractions.Data;
 using SupportAI.Application.Abstractions.Tenancy;
+using SupportAI.Application.Features.Ai.Llm;
+using SupportAI.Infrastructure.Ai;
+using SupportAI.Infrastructure.Ai.Claude;
+using SupportAI.Infrastructure.Ai.Fake;
 using SupportAI.Infrastructure.BackgroundJobs;
 using SupportAI.Infrastructure.Identity;
 using SupportAI.Infrastructure.Persistence;
@@ -34,8 +41,45 @@ public static class DependencyInjection
         AddIdentityCore(services);
         AddAuthentication(services, configuration);
         AddBackgroundJobs(services, configuration);
+        AddAi(services, configuration);
 
         return services;
+    }
+
+    private static void AddAi(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<LlmOptions>().Bind(configuration.GetSection(LlmOptions.SectionName));
+
+        // Precios por MTok (USD) para estimar costos en LlmCallLog; sobrescribibles por configuración.
+        services.Configure<LlmPricingOptions>(o =>
+        {
+            o.Models["claude-opus-5-5"] = new ModelPricing { InputPerMTok = 4m, OutputPerMTok = 20m, CacheWritePerMTok = 5m, CacheReadPerMTok = 0.20m };
+            o.Models["claude-sonnet-5-5"] = new ModelPricing { InputPerMTok = 2m, OutputPerMTok = 10m, CacheWritePerMTok = 2.5m, CacheReadPerMTok = 0.20m };
+            o.Models["claude-haiku-4-5"] = new ModelPricing { InputPerMTok = 1m, OutputPerMTok = 5m, CacheWritePerMTok = 1.25m, CacheReadPerMTok = 0.10m };
+        });
+        services.Configure<LlmPricingOptions>(configuration.GetSection(LlmPricingOptions.SectionName));
+
+        services.AddSingleton<IJsonSchemaValidator, JsonSchemaValidator>();
+        services.AddScoped<PromptCatalogSynchronizer>();
+
+        var provider = configuration.GetValue(LlmOptions.SectionName + ":" + nameof(LlmOptions.Provider), LlmProvider.Fake);
+        if (provider == LlmProvider.Claude)
+        {
+            services.AddSingleton(sp =>
+            {
+                var settings = sp.GetRequiredService<IOptions<LlmOptions>>().Value;
+                // Sin ApiKey explícita, el SDK resuelve ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / perfil de `ant auth login`.
+                return string.IsNullOrWhiteSpace(settings.ApiKey)
+                    ? new AnthropicClient { MaxRetries = settings.MaxRetries, Timeout = settings.RequestTimeout }
+                    : new AnthropicClient { ApiKey = settings.ApiKey, MaxRetries = settings.MaxRetries, Timeout = settings.RequestTimeout };
+            });
+            services.AddSingleton<ClaudeLlmClient>();
+            services.AddSingleton<ILlmClient>(sp => ActivatorUtilities.CreateInstance<ResilientLlmClient>(sp, sp.GetRequiredService<ClaudeLlmClient>()));
+        }
+        else
+        {
+            services.AddSingleton<ILlmClient, FakeLlmClient>();
+        }
     }
 
     private static void AddAuthentication(IServiceCollection services, IConfiguration configuration)

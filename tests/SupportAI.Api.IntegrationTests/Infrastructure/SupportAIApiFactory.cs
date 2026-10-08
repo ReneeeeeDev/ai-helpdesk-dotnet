@@ -54,6 +54,7 @@ public sealed class SupportAIApiFactory : WebApplicationFactory<Program>, IAsync
         builder.UseSetting("RateLimiting:AuthRequestsPerIpPerMinute", "10000");
         builder.UseSetting("RateLimiting:AiRequestsPerTenantPerMinute", "10000");
         builder.UseSetting("Llm:Provider", "Fake");
+        builder.UseSetting("Llm:FakeLatency", "00:00:00");
         builder.UseSetting("Serilog:MinimumLevel:Default", "Warning");
 
         builder.ConfigureServices(services =>

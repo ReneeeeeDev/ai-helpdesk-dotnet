@@ -12,6 +12,7 @@ using SupportAI.Api.Auth;
 using SupportAI.Api.ErrorHandling;
 using SupportAI.Api.OpenApi;
 using SupportAI.Api.Realtime;
+using SupportAI.Api.Streaming;
 using SupportAI.Application.Abstractions.Auth;
 using SupportAI.Application.Abstractions.Notifications;
 using SupportAI.Infrastructure.Identity;
@@ -43,6 +44,7 @@ internal static class ApiServiceCollectionExtensions
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
         services.AddScoped<ITicketNotifier, SignalRTicketNotifier>();
+        services.AddSingleton<ServerSentEvents>();
 
         services.AddRouting(o => o.LowercaseUrls = true);
         services.AddControllers()

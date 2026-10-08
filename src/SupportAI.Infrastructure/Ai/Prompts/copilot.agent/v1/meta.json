@@ -1,0 +1,9 @@
+{
+  "key": "copilot.agent",
+  "version": 1,
+  "description": "Copiloto del agente con tool use (tickets, SLA y base de conocimiento).",
+  "model": "claude-opus-5-5",
+  "effort": "medium",
+  "maxTokens": 8000,
+  "activateOnSeed": true
+}

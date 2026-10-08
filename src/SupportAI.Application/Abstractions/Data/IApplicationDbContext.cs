@@ -37,4 +37,10 @@ public interface IApplicationDbContext
     DbSet<LlmCallLog> LlmCalls { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ejecuta varias operaciones en una transacción explícita, compatible con la estrategia de reintentos de SQL Server
+    /// (si hay un fallo transitorio, se reintenta el bloque completo).
+    /// </summary>
+    Task ExecuteInTransactionAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken = default);
 }

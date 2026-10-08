@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SupportAI.Application.Abstractions.Ai;
 using SupportAI.Application.Common.Exceptions;
 using SupportAI.Domain.Common;
 
@@ -31,6 +32,10 @@ internal sealed partial class GlobalExceptionHandler(
             DomainException d => (StatusCodes.Status422UnprocessableEntity, "Regla de negocio incumplida", d.Code, exception.Message),
             QuotaExceededException => (StatusCodes.Status429TooManyRequests, "Cuota excedida", "quota_exceeded", exception.Message),
             AiUnavailableException => (StatusCodes.Status503ServiceUnavailable, "IA no disponible", "ai_unavailable", exception.Message),
+            LlmException { Kind: LlmErrorKind.RateLimited } => (StatusCodes.Status429TooManyRequests, "IA saturada", "ai_rate_limited", exception.Message),
+            LlmException { Kind: LlmErrorKind.Refused } => (StatusCodes.Status422UnprocessableEntity, "Solicitud rechazada por la IA", "ai_refused", exception.Message),
+            LlmException { IsTransient: true } => (StatusCodes.Status503ServiceUnavailable, "IA no disponible", "ai_unavailable", exception.Message),
+            LlmException => (StatusCodes.Status502BadGateway, "Error del proveedor de IA", "ai_provider_error", exception.Message),
             OperationCanceledException when httpContext.RequestAborted.IsCancellationRequested =>
                 (499, "Solicitud cancelada", "client_closed_request", "El cliente cerró la conexión."),
             _ => (StatusCodes.Status500InternalServerError, "Error interno", "internal_error",

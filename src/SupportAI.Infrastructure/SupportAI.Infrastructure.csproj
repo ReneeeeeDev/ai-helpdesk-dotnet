@@ -20,7 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Prompts versionados: se embeben en el ensamblado y se sincronizan a la BD al arrancar. -->
-    <EmbeddedResource Include="Ai\Prompts\**\*.md;Ai\Prompts\**\*.json" />
+    <EmbeddedResource Include="Ai\Prompts\**\*.md;Ai\Prompts\**\*.json" LogicalName="prompts/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="SupportAI.Application.Tests" />

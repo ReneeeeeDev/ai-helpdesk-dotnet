@@ -1,0 +1,9 @@
+{
+  "key": "ticket.reply",
+  "version": 1,
+  "description": "Borrador de respuesta con citas a la base de conocimiento.",
+  "model": "claude-opus-5-5",
+  "effort": "medium",
+  "maxTokens": 8000,
+  "activateOnSeed": true
+}
