@@ -1,0 +1,16 @@
+---
+description: Reglas de arquitectura y capas de SupportAI
+globs: src/**/*.cs
+alwaysApply: true
+---
+
+Sigue `AGENTS.md` (fuente única de convenciones). Resumen de capas:
+
+- `SupportAI.Domain`: sin dependencias. Las invariantes viven en métodos de las entidades; sin setters públicos.
+- `SupportAI.Application`: casos de uso CQRS (`ICommand<T>`/`IQuery<T>` + handlers), validadores FluentValidation, puertos (interfaces).
+  Prohibido referenciar `SupportAI.Infrastructure`, `Microsoft.AspNetCore.*` o el SDK `Anthropic`.
+- `SupportAI.Infrastructure`: implementaciones (EF Core, Identity, Claude, outbox, workers).
+- `SupportAI.Api`: controllers delgados → `ISender.Send(...)`. Errores vía excepciones tipadas → ProblemDetails.
+- `SupportAI.Web`: Blazor; solo consume la API a través de clientes tipados y DTOs de `SupportAI.Contracts`.
+
+Los tests de `tests/SupportAI.Architecture.Tests` hacen fallar el build si se viola una regla.

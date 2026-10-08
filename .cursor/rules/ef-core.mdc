@@ -1,0 +1,12 @@
+---
+description: Reglas de EF Core y migraciones
+globs: src/SupportAI.Infrastructure/Persistence/**/*.cs
+alwaysApply: false
+---
+
+- Una `IEntityTypeConfiguration<T>` por entidad; enums con `HasConversion<string>()` y longitud máxima explícita.
+- Entidades multi-tenant implementan `ITenantOwned`; el filtro global se aplica en `SupportAIDbContext.OnModelCreating`.
+- Concurrencia optimista con `RowVersion` en agregados editables (Ticket).
+- Nunca edites a mano una migración ya mergeada en `main`; crea una nueva.
+- Conflicto en `*ModelSnapshot.cs` tras un rebase: elimina tu migración, toma el snapshot de `main`, regenera con
+  `dotnet ef migrations add <Nombre> -p src/SupportAI.Infrastructure -s src/SupportAI.Api -o Persistence/Migrations`.

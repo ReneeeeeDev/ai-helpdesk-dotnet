@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- DTOs públicos de la API, compartidos con el cliente Blazor. Sin dependencias. -->
+</Project>

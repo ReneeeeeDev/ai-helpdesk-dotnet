@@ -1,0 +1,19 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# Valida Conventional Commits: <tipo>(<scope>)?: <descripción>
+msg_file="$1"
+first_line=$(head -n 1 "$msg_file")
+
+case "$first_line" in
+  Merge*|Revert*|fixup!*|squash!*|amend!*) exit 0 ;;
+esac
+
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .{3,100}$'
+if ! printf '%s' "$first_line" | grep -Eq "$pattern"; then
+  echo "x Mensaje de commit invalido: \"$first_line\""
+  echo "  Formato: <tipo>(<scope>)?: <descripcion>   (max 100 caracteres)"
+  echo "  Tipos:   feat fix docs style refactor perf test build ci chore revert"
+  echo "  Ejemplo: feat(tickets): agregar paginacion keyset al inbox"
+  exit 1
+fi

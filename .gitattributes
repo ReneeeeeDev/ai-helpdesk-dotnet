@@ -1,0 +1,23 @@
+# Normaliza finales de línea en el repositorio (LF), checkout según plataforma.
+* text=auto
+
+# Scripts y hooks siempre en LF (se ejecutan en sh incluso en Windows).
+*.sh text eol=lf
+.husky/* text eol=lf
+
+# Archivos de solución de Visual Studio prefieren CRLF.
+*.sln text eol=crlf
+
+# Snapshot de EF: estrategia de merge "ours" no es segura; se fuerza conflicto explícito
+# y se regenera la migración (ver docs/git-workflow.md).
+**/Migrations/*ModelSnapshot.cs text diff=csharp
+
+*.cs text diff=csharp
+*.razor text
+*.md text diff=markdown
+
+# Binarios
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary

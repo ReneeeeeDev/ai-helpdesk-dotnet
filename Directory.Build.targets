@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    Instala los git hooks de Husky.Net automáticamente al restaurar (solo en máquinas de desarrollo).
+    Se desactiva en CI o con la variable HUSKY=0.
+  -->
+  <Target Name="InstallHusky"
+          BeforeTargets="Restore;CollectPackageReferences"
+          Condition="'$(MSBuildProjectName)' == 'SupportAI.Domain' And '$(HUSKY)' != '0' And '$(CI)' != 'true' And '$(GITLAB_CI)' != 'true'">
+    <Exec Command="dotnet tool restore" StandardOutputImportance="Low" WorkingDirectory="$(MSBuildThisFileDirectory)" ContinueOnError="true" />
+    <Exec Command="dotnet husky install" StandardOutputImportance="Low" WorkingDirectory="$(MSBuildThisFileDirectory)" ContinueOnError="true" />
+  </Target>
+</Project>

@@ -1,0 +1,12 @@
+---
+description: Reglas para prompts e integración con Claude
+globs: src/SupportAI.Infrastructure/Ai/**
+alwaysApply: false
+---
+
+- Modelo por defecto `claude-opus-5-5` (en `meta.json`). Thinking adaptativo siempre activo; controla con `effort`.
+- Sin prefill de assistant y sin `tool_choice` forzado (400 en este modelo). JSON vía `OutputConfig.Format` + `schema.json`.
+- `schema.json` debe tener `additionalProperties: false` y `required` con todas las propiedades.
+- No edites `v{n}` existentes: crea `v{n+1}` (ver `.claude/commands/add-prompt-version.md`).
+- El contenido de usuario va dentro de `<ticket>`/`<thread>` y el system prompt lo declara no confiable.
+- Toda llamada pasa por `ILlmClient` y se registra en `LlmCallLog`. Los tests usan `FakeLlmClient`.

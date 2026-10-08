@@ -1,0 +1,12 @@
+---
+description: Estilo de C# del proyecto
+globs: "**/*.cs"
+alwaysApply: false
+---
+
+- Namespaces file-scoped; `sealed` por defecto; `record` para DTOs, comandos y queries.
+- Inyecta `TimeProvider`; nunca uses `DateTime.Now`/`DateTime.UtcNow` directamente.
+- Toda API asíncrona recibe `CancellationToken ct` como último parámetro.
+- Logging con plantillas estructuradas, sin interpolación de strings.
+- Excepciones de negocio: `DomainException`, `NotFoundException`, `ForbiddenException`, `ConflictException`.
+- Tests: `Metodo_Escenario_ResultadoEsperado`, Shouldly para aserciones, NSubstitute para dobles.
