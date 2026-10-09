@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "ms-dotnettools.csdevkit",
+    "ms-azuretools.vscode-azureappservice",
+    "ms-azuretools.vscode-azureresourcegroups",
+    "ms-mssql.mssql",
+    "GitLab.gitlab-workflow",
+    "EditorConfig.EditorConfig"
+  ]
+}

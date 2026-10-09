@@ -120,7 +120,8 @@ public static class DependencyInjection
             options.UseSqlServer(connectionString, sql =>
             {
                 sql.UseCompatibilityLevel(SqlCompatibilityLevel);
-                sql.EnableRetryOnFailure(maxRetryCount: 3);
+                // Azure SQL serverless puede tardar ~1 min en reanudarse tras una pausa automática.
+                sql.EnableRetryOnFailure(maxRetryCount: 6, maxRetryDelay: TimeSpan.FromSeconds(30), errorNumbersToAdd: null);
                 sql.UseQuerySplittingBehavior(QuerySplittingBehavior.SingleQuery);
             });
             options.AddInterceptors(

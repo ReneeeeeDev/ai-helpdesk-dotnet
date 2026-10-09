@@ -1,0 +1,51 @@
+{
+  // Tareas para publicar en Azure App Service desde la extensión de VS Code.
+  // Uso: Terminal → Run Task → "publish: api + web", luego clic derecho en artifacts/publish/api (o web) → "Deploy to Web App...".
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "clean: publish",
+      "type": "shell",
+      "command": "if (Test-Path artifacts/publish) { Remove-Item -Recurse -Force artifacts/publish }",
+      "options": { "shell": { "executable": "powershell.exe", "args": [ "-NoProfile", "-Command" ] } },
+      "problemMatcher": []
+    },
+    {
+      "label": "publish: api",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "publish",
+        "${workspaceFolder}/src/SupportAI.Api/SupportAI.Api.csproj",
+        "-c", "Release",
+        "-o", "${workspaceFolder}/artifacts/publish/api",
+        "-p:UseAppHost=false"
+      ],
+      "options": { "env": { "HUSKY": "0" } },
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
+      "label": "publish: web",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "publish",
+        "${workspaceFolder}/src/SupportAI.Web/SupportAI.Web.csproj",
+        "-c", "Release",
+        "-o", "${workspaceFolder}/artifacts/publish/web",
+        "-p:UseAppHost=false"
+      ],
+      "options": { "env": { "HUSKY": "0" } },
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
+      "label": "publish: api + web",
+      "dependsOn": [ "clean: publish", "publish: api", "publish: web" ],
+      "dependsOrder": "sequence",
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": false }
+    }
+  ]
+}

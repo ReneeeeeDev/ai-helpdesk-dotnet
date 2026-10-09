@@ -3,6 +3,9 @@
     <ProjectReference Include="..\SupportAI.Contracts\SupportAI.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" Condition="Exists('appsettings.Development.json')" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="MudBlazor" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
   </ItemGroup>

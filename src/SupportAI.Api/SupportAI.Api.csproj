@@ -18,6 +18,12 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <!-- No publicar logs locales ni la configuración de desarrollo (clave JWT de dev). -->
+    <Content Remove="logs/**" />
+    <None Remove="logs/**" />
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="SupportAI.Api.IntegrationTests" />
   </ItemGroup>
 </Project>

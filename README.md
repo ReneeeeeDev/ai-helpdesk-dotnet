@@ -71,6 +71,8 @@ La API aplica las migraciones y carga datos demo al arrancar en Development. Cue
 
 Con Docker: `docker compose up --build` levanta SQL Server, API (`:8080`) y Web (`:8081`).
 
+**Despliegue en Azure** (App Service + Azure SQL, desde VS Code): [docs/azure-deploy.md](docs/azure-deploy.md).
+
 ### Usar Claude real
 
 ```bash
