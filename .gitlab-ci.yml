@@ -4,12 +4,15 @@
 # MR / main / tags:  lint → build → test (unit, integración con SQL Server, migraciones, eval smoke)
 #                    → security (SAST, secretos, paquetes vulnerables)
 #                    → evaluate (prompt-eval con Claude real: manual y BLOQUEANTE si cambian prompts; ai-review opcional)
-# main / tags:       → package (imágenes Docker + script SQL idempotente) → deploy (staging auto, production manual)
+# main:              → package (zips de publicación + script SQL idempotente) → deploy-azure (App Service vía OIDC)
+# tags vX.Y.Z:       → además, imágenes Docker en el Container Registry
 #
-# Variables de CI/CD necesarias (Settings → CI/CD → Variables, masked + protected):
-#   ANTHROPIC_API_KEY     jobs prompt-eval y ai-review
-#   GITLAB_REVIEW_TOKEN   job ai-review (project access token con scope "api", rol Reporter)
-#   DEPLOY_WEBHOOK_URL    jobs de deploy (opcional; sin ella el deploy es un dry-run)
+# Variables de CI/CD (Settings → CI/CD → Variables):
+#   ANTHROPIC_API_KEY     (masked) jobs prompt-eval y ai-review
+#   GITLAB_REVIEW_TOKEN   (masked) job ai-review (project access token, scope "api", rol Reporter)
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP,
+#   AZURE_API_APP, AZURE_WEB_APP, AZURE_API_URL, AZURE_WEB_URL
+#                         job deploy-azure (OIDC: sin secretos de Azure; ver docs/azure-deploy.md §10)
 # ──────────────────────────────────────────────────────────────────────────────
 
 workflow:
@@ -246,7 +249,7 @@ ai-review:
     DOCKER_TLS_CERTDIR: "/certs"
   needs: [unit-tests, integration-tests]
   rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    # Solo en releases: el despliegue a Azure usa los zips de `publish` (ahorra minutos de CI).
     - if: $CI_COMMIT_TAG
   before_script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
@@ -272,6 +275,24 @@ package-web:
     IMAGE_NAME: web
     DOCKERFILE: src/SupportAI.Web/Dockerfile
 
+publish:
+  stage: package
+  needs: [build]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+  script:
+    - dotnet publish src/SupportAI.Api -c $CONFIGURATION -o artifacts/publish/api -p:UseAppHost=false
+    - dotnet publish src/SupportAI.Web -c $CONFIGURATION -o artifacts/publish/web -p:UseAppHost=false
+    # La imagen del SDK de .NET incluye PowerShell: comprime el contenido (no la carpeta) para App Service.
+    - pwsh -NoProfile -Command "Compress-Archive -Path artifacts/publish/api/* -DestinationPath artifacts/api.zip"
+    - pwsh -NoProfile -Command "Compress-Archive -Path artifacts/publish/web/* -DestinationPath artifacts/web.zip"
+  artifacts:
+    expire_in: 7 days
+    paths:
+      - artifacts/api.zip
+      - artifacts/web.zip
+
 migration-script:
   stage: package
   needs: [build]
@@ -288,38 +309,33 @@ migration-script:
 
 # ───────────────────────────── deploy ─────────────────────────────
 
-.deploy:
+deploy-azure:
   stage: deploy
-  image: curlimages/curl:8.11.1
+  image: mcr.microsoft.com/azure-cli:latest
+  needs: [publish, unit-tests, integration-tests, migrations-check]
+  # OIDC: GitLab emite un token firmado para este job y Azure lo canjea (credencial federada).
+  # No hay contraseñas ni secretos de Azure guardados en GitLab.
+  id_tokens:
+    AZURE_ID_TOKEN:
+      aud: api://AzureADTokenExchange
+  environment:
+    name: azure
+    url: $AZURE_WEB_URL
+  resource_group: azure
+  rules:
+    # Solo en main y solo si Azure está configurado (sin variables, el job no aparece).
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $AZURE_CLIENT_ID && $AZURE_TENANT_ID && $AZURE_RESOURCE_GROUP
   script:
-    - TAG="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
-    - echo "Desplegando api:$TAG y web:$TAG en $CI_ENVIRONMENT_NAME"
+    - az login --service-principal --username "$AZURE_CLIENT_ID" --tenant "$AZURE_TENANT_ID" --federated-token "$AZURE_ID_TOKEN" --output none
+    - if [ -n "$AZURE_SUBSCRIPTION_ID" ]; then az account set --subscription "$AZURE_SUBSCRIPTION_ID"; fi
+    - az webapp deploy --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_API_APP" --src-path artifacts/api.zip --type zip --clean true --restart true
+    - az webapp deploy --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_WEB_APP" --src-path artifacts/web.zip --type zip --clean true --restart true
     - |
-      if [ -z "$DEPLOY_WEBHOOK_URL" ]; then
-        echo "DEPLOY_WEBHOOK_URL no definida: dry-run (configúrala para tu plataforma: Kubernetes, App Service, etc.)."
-        exit 0
+      # Smoke test: la API debe responder Healthy (incluye la base de datos). La BD serverless puede tardar en despertar.
+      if [ -n "$AZURE_API_URL" ]; then
+        for i in $(seq 1 30); do
+          if curl -fsS "${AZURE_API_URL%/}/health/ready" | grep -q Healthy; then echo "API Healthy"; exit 0; fi
+          echo "Esperando a la API ($i/30)..."; sleep 10
+        done
+        echo "✖ La API no respondió Healthy tras el despliegue. Revisa el Log stream en Azure."; exit 1
       fi
-      curl --fail -X POST "$DEPLOY_WEBHOOK_URL" \
-        -H "Content-Type: application/json" \
-        -d "{\"environment\":\"$CI_ENVIRONMENT_NAME\",\"tag\":\"$TAG\",\"migrations\":\"$CI_JOB_URL\"}"
-
-deploy-staging:
-  extends: .deploy
-  needs: [package-api, package-web, migration-script]
-  environment:
-    name: staging
-    url: https://staging.supportai.example.com
-  resource_group: staging
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-
-deploy-production:
-  extends: .deploy
-  needs: [package-api, package-web, migration-script]
-  environment:
-    name: production
-    url: https://supportai.example.com
-  resource_group: production
-  rules:
-    - if: $CI_COMMIT_TAG
-      when: manual

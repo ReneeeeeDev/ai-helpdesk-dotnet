@@ -148,10 +148,65 @@ En el primer arranque, la API aplica las migraciones en Azure SQL, publica los p
 
 Las migraciones nuevas se aplican solas al arrancar mientras `Database__ApplyMigrationsOnStartup=true`. En un entorno real, desactívalo y aplica el script idempotente que genera el pipeline (`artifacts/migrations.sql`).
 
-## 9. Siguiente paso: despliegue automático desde GitLab
+## 9. Despliegue continuo desde GitLab (sin secretos)
 
-El job `deploy-staging` de `.gitlab-ci.yml` es una plantilla. Para desplegar en Azure desde CI:
+Cuando esté configurado, **cada merge a `main`** ejecuta: tests → `publish` (genera `api.zip` y `web.zip`) → `deploy-azure`
+(los sube a las dos Web Apps y espera a que `/health/ready` responda *Healthy*). Ya no necesitas desplegar desde VS Code.
 
-1. Crea un *service principal* (o federación OIDC) con permiso *Website Contributor* sobre `rg-supportai`.
-2. Guarda sus credenciales como variables *masked* en GitLab.
-3. En el job: `az login --service-principal ...`, luego `az webapp deploy --resource-group rg-supportai --name supportai-api-<sufijo> --src-path api.zip --type zip`.
+La autenticación usa **OIDC (credencial federada)**: GitLab firma un token de corta duración para el job y Azure lo
+acepta porque confías explícitamente en ese proyecto y esa rama. No se guarda ninguna contraseña de Azure en GitLab.
+
+### 9.1 Registro de aplicación en Microsoft Entra ID
+
+Portal de Azure → **Microsoft Entra ID → App registrations → New registration**:
+
+- Name: `gitlab-supportai-deploy` · Supported account types: *Single tenant* → **Register**.
+- En **Overview**, copia **Application (client) ID** y **Directory (tenant) ID**.
+
+### 9.2 Credencial federada (confiar en GitLab)
+
+En el registro → **Certificates & secrets → Federated credentials → Add credential**:
+
+| Campo | Valor |
+|---|---|
+| Federated credential scenario | **Other issuer** |
+| Issuer | `https://gitlab.com` |
+| Type / Subject identifier | `project_path:reneener-group/supportai:ref_type:branch:ref:main` |
+| Name | `gitlab-main` |
+| Audience | `api://AzureADTokenExchange` |
+
+Solo los pipelines de la rama `main` de ese proyecto podrán desplegar.
+
+### 9.3 Permiso sobre el Resource Group
+
+**Resource groups → `rg-supportai` → Access control (IAM) → Add role assignment** → rol **Website Contributor** →
+Members: *User, group, or service principal* → busca `gitlab-supportai-deploy` → **Review + assign**.
+
+### 9.4 Variables en GitLab
+
+GitLab → proyecto → **Settings → CI/CD → Variables → Add variable** (no son secretos, pero márcalas *Protected* para que
+solo las vean las ramas protegidas):
+
+| Variable | Valor |
+|---|---|
+| `AZURE_CLIENT_ID` | Application (client) ID del paso 9.1 |
+| `AZURE_TENANT_ID` | Directory (tenant) ID |
+| `AZURE_SUBSCRIPTION_ID` | ID de tu suscripción (Subscriptions en el portal) |
+| `AZURE_RESOURCE_GROUP` | `rg-supportai` |
+| `AZURE_API_APP` | Nombre de la Web App de la API |
+| `AZURE_WEB_APP` | Nombre de la Web App de la web |
+| `AZURE_API_URL` | `https://<dominio de la API>` (para el smoke test) |
+| `AZURE_WEB_URL` | `https://<dominio de la web>` (enlace del entorno en GitLab) |
+
+Protege la rama `main` (**Settings → Repository → Protected branches**) para que las variables *Protected* estén disponibles.
+
+### 9.5 Probar
+
+Haz un cambio pequeño en una rama, abre un MR, mergéalo y mira **Build → Pipelines**: el job `deploy-azure` aparece al
+final del pipeline de `main`. En **Operate → Environments → azure** verás el historial de despliegues y el enlace a la web.
+
+Si `deploy-azure` falla con `AADSTS70021` / *No matching federated identity record*, el *subject* del paso 9.2 no coincide
+con el proyecto o la rama. Si falla con *AuthorizationFailed*, revisa el rol del paso 9.3.
+
+> **Minutos de CI**: en gitlab.com, los proyectos privados del plan gratuito tienen una cuota mensual de minutos de
+> runners compartidos. Para ahorrarla, las imágenes Docker solo se construyen al crear un tag `vX.Y.Z`.

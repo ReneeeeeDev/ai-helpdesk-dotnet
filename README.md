@@ -20,7 +20,7 @@ Los agentes además tienen **respuestas sugeridas con citas** a la base de conoc
 | **Integración de LLMs** | `Infrastructure/Ai`: `ClaudeLlmClient` (structured outputs, streaming, tool use, prompt caching, fallback del servidor), circuit breaker, presupuesto de tokens, costos en `LlmCallLog` |
 | **Prompt engineering y JSON** | Prompts versionados e inmutables en `Ai/Prompts/{key}/v{n}`, JSON Schema con enums dinámicos por tenant, validación en capas + reparación, defensa contra prompt injection, redacción de PII, evaluación con dataset dorado |
 | **Git** | Historia lineal por fases (ramas `feat/*` + rebase + fast-forward), Conventional Commits con hook, `rerere`, guía de conflictos (incluido el de `ModelSnapshot` de EF): [docs/git-workflow.md](docs/git-workflow.md) |
-| **GitLab** | [.gitlab-ci.yml](.gitlab-ci.yml) (lint, build, tests con JUnit/cobertura, SQL Server como servicio, SAST, evaluación de prompts bloqueante, Docker, environments), plantillas de MR e issues, CODEOWNERS, revisor de MR con IA |
+| **GitLab** | [.gitlab-ci.yml](.gitlab-ci.yml) (lint, build, tests con JUnit/cobertura, SQL Server como servicio, SAST, evaluación de prompts bloqueante, despliegue a Azure con OIDC), plantillas de MR e issues, CODEOWNERS, revisor de MR con IA |
 | **Asistentes de IA** | [AGENTS.md](AGENTS.md) como fuente única; [CLAUDE.md](CLAUDE.md), `.cursor/rules/`, `.github/copilot-instructions.md`, comandos de Claude Code en `.claude/commands/` |
 
 ## Arquitectura
@@ -133,4 +133,5 @@ En GitLab CI lo ejecuta el job manual `ai-review` (requiere `ANTHROPIC_API_KEY` 
   cortos, así que la tasa de caché será baja hasta que crezcan (más ejemplos few-shot).
 - LocalDB no tiene Full-Text Search: la KB usa búsqueda léxica ranqueada en la app (sustituible por FTS o vectores sin
   cambiar la interfaz `IKnowledgeSearch`).
-- Los jobs de despliegue son plantillas (`DEPLOY_WEBHOOK_URL`) para adaptar a la plataforma de destino.
+- El despliegue continuo a Azure (`deploy-azure`) requiere configurar una vez la credencial federada OIDC y las variables
+  de GitLab ([docs/azure-deploy.md](docs/azure-deploy.md), sección 9); sin ellas el job no se ejecuta.
